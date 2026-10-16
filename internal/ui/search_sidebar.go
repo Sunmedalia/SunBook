@@ -46,7 +46,7 @@ func (a *App) drawSearchSidebar() {
 	r := a.sideRect
 	a.drawSidebarHeader("SEARCH", 4)
 	if a.searchError != "" {
-		a.drawButton(r.X+r.W-4, r.Y, "!", "search.error", "Show search error", false)
+		a.drawButton(r.X+r.W-4, r.Y, a.actionLabel("search.error", "Error", true), "search.error", "Show search error", false)
 	}
 	a.searchInputRect = rect{r.X + 1, r.Y + 1, r.W - 2, 1}
 	a.searchOffset = a.drawSidebarInput(a.searchInputRect, a.searchQuery, a.searchCursor, "Search workspace…", "searchInput")
@@ -62,10 +62,11 @@ func (a *App) drawSearchSidebar() {
 	}
 	x = r.X + 1
 	for _, b := range []struct{ label, id string }{{"Go", "search.run"}, {"Clear", "search.clear"}, {"Stop", "search.stop"}} {
-		if x+len(b.label)+2 > r.X+r.W {
+		label := a.actionLabel(b.id, b.label, b.id != "search.run")
+		if x+text.Width(label, 4)+2 > r.X+r.W {
 			continue
 		}
-		x += a.drawButton(x, r.Y+3, b.label, b.id, b.label+" workspace search", false) + 1
+		x += a.drawButton(x, r.Y+3, label, b.id, b.label+" workspace search", false) + 1
 	}
 	statusY := r.Y + 4
 	if a.searchPathsVisible && r.H >= 12 {

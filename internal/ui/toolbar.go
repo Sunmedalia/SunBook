@@ -102,13 +102,15 @@ func (a *App) drawToolbar() {
 		a.put(x, 0, 8, "SUNBOOK", a.accent.Bold(true))
 		x = 10
 	}
-	helpX := w - 7
-	moreX := helpX - 7
-	a.drawButton(moreX, 0, "More", "app.commands", "All commands (F1)", false)
-	a.drawButton(helpX, 0, "Help", "app.help", "Keyboard shortcuts", false)
+	helpLabel := a.actionLabel("app.help", "Help", w < 40)
+	moreLabel := a.actionLabel("app.commands", "More", true)
+	helpX := w - text.Width(helpLabel, 4) - 3
+	moreX := helpX - text.Width(moreLabel, 4) - 3
+	a.drawButton(moreX, 0, moreLabel, "app.commands", "All commands (F1)", false)
+	a.drawButton(helpX, 0, helpLabel, "app.help", "Help: keyboard shortcuts", false)
 	actions := []struct {
 		label, id, hint  string
-		active, optional bool
+		active, iconOnly bool
 	}{
 		{"New", "file.new", "New file (Ctrl+N)", false, false},
 		{"Open", "file.open", "Open file (Ctrl+O)", false, false},
@@ -120,13 +122,12 @@ func (a *App) drawToolbar() {
 		{"Terminal", "view.showTerminal", "Show terminal (F4 focuses; Ctrl+J hides panel)", a.panelVisible && a.panel == "Terminal", false},
 	}
 	for _, action := range actions {
-		if action.optional && w < 100 {
-			continue
-		}
-		width := text.Width(action.label, 4) + 2
+		compact := w < 100 || action.iconOnly || action.id == "view.split"
+		label := a.actionLabel(action.id, action.label, compact)
+		width := text.Width(label, 4) + 2
 		if x+width >= moreX {
 			continue
 		}
-		x += a.drawButton(x, 0, action.label, action.id, action.hint, action.active) + 1
+		x += a.drawButton(x, 0, label, action.id, action.hint, action.active) + 1
 	}
 }

@@ -189,18 +189,21 @@ func TestToolbarClicksSaveUndoRedoFindAndSplit(t *testing.T) {
 func TestButtonsStayWithinScreenAndAvoidOverlap(t *testing.T) {
 	a, mt := testApp(t)
 	a.panelVisible = true
-	for _, size := range []vt.Coord{{X: 110, Y: 32}, {X: 80, Y: 24}, {X: 45, Y: 20}, {X: 24, Y: 10}, {X: 6, Y: 3}} {
-		mt.SetSize(size)
-		a.screen.Sync()
-		a.draw()
-		w, h := a.screen.Size()
-		for i, b := range a.buttons {
-			if b.X < 0 || b.Y < 0 || b.X+b.W > w || b.Y >= h {
-				t.Fatal("button outside screen", size, b)
-			}
-			for _, other := range a.buttons[:i] {
-				if b.Y == other.Y && b.X < other.X+other.W && b.X+b.W > other.X {
-					t.Fatal("overlapping click targets", size, b, other)
+	for _, icons := range []string{"nerd", "unicode"} {
+		a.cfg.ActivityIcons = icons
+		for _, size := range []vt.Coord{{X: 140, Y: 40}, {X: 110, Y: 32}, {X: 100, Y: 28}, {X: 80, Y: 24}, {X: 45, Y: 20}, {X: 24, Y: 10}, {X: 6, Y: 3}} {
+			mt.SetSize(size)
+			a.screen.Sync()
+			a.draw()
+			w, h := a.screen.Size()
+			for i, b := range a.buttons {
+				if b.X < 0 || b.Y < 0 || b.X+b.W > w || b.Y >= h {
+					t.Fatal("button outside screen", icons, size, b)
+				}
+				for _, other := range a.buttons[:i] {
+					if b.Y == other.Y && b.X < other.X+other.W && b.X+b.W > other.X {
+						t.Fatal("overlapping click targets", icons, size, b, other)
+					}
 				}
 			}
 		}

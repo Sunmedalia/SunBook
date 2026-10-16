@@ -183,20 +183,23 @@ func TestSidebarAndDockButtonsStayWithinBounds(t *testing.T) {
 	for i := 0; i < 24; i++ {
 		a.git.Files = append(a.git.Files, gitservice.File{Path: fmt.Sprintf("src/file%d.go", i), Index: " ", Worktree: "M"})
 	}
-	for _, size := range []vt.Coord{{X: 140, Y: 40}, {X: 110, Y: 32}, {X: 80, Y: 24}, {X: 60, Y: 14}, {X: 45, Y: 10}, {X: 24, Y: 7}} {
-		mt.SetSize(size)
-		a.screen.Sync()
-		for _, view := range []string{"Explorer", "Search", "Git"} {
-			a.sidebarView = view
-			a.draw()
-			w, h := a.screen.Size()
-			for i, b := range a.buttons {
-				if b.X < 0 || b.Y < 0 || b.X+b.W > w || b.Y >= h {
-					t.Fatal("control outside screen", view, size, b)
-				}
-				for _, other := range a.buttons[:i] {
-					if b.Y == other.Y && b.X < other.X+other.W && b.X+b.W > other.X {
-						t.Fatal("overlapping controls", view, size, b, other)
+	for _, icons := range []string{"nerd", "unicode"} {
+		a.cfg.ActivityIcons = icons
+		for _, size := range []vt.Coord{{X: 140, Y: 40}, {X: 110, Y: 32}, {X: 80, Y: 24}, {X: 60, Y: 14}, {X: 45, Y: 10}, {X: 24, Y: 7}} {
+			mt.SetSize(size)
+			a.screen.Sync()
+			for _, view := range []string{"Explorer", "Search", "Git"} {
+				a.sidebarView = view
+				a.draw()
+				w, h := a.screen.Size()
+				for i, b := range a.buttons {
+					if b.X < 0 || b.Y < 0 || b.X+b.W > w || b.Y >= h {
+						t.Fatal("control outside screen", view, size, b)
+					}
+					for _, other := range a.buttons[:i] {
+						if b.Y == other.Y && b.X < other.X+other.W && b.X+b.W > other.X {
+							t.Fatal("overlapping controls", view, size, b, other)
+						}
 					}
 				}
 			}

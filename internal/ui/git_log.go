@@ -138,7 +138,7 @@ func (a *App) drawGitLog() {
 	if a.gitLogExpanded {
 		symbol = "v"
 	}
-	a.drawButton(r.X+r.W-4, r.Y, symbol, "git.toggleLog", "Expand / restore Git log; h focuses log", a.gitLogExpanded)
+	a.drawButton(r.X+r.W-4, r.Y, a.actionLabel("git.toggleLog", symbol, true), "git.toggleLog", "Expand / restore Git log; h focuses log", a.gitLogExpanded)
 	r = a.gitLogRect
 	if r.H == 0 {
 		return

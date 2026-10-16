@@ -204,8 +204,8 @@ func (a *App) drawTree() {
 	a.fill(r, a.chrome)
 	a.drawSidebarHeader("EXPLORER", 8)
 	if r.W >= 20 {
-		a.drawButton(r.X+r.W-8, r.Y, "+", "file.new", "New file (Ctrl+N)", false)
-		a.drawButton(r.X+r.W-4, r.Y, "R", "explorer.refresh", "Refresh Explorer", false)
+		a.drawButton(r.X+r.W-8, r.Y, a.actionLabel("file.new", "New", true), "file.new", "New file (Ctrl+N)", false)
+		a.drawButton(r.X+r.W-4, r.Y, a.actionLabel("explorer.refresh", "Refresh", true), "explorer.refresh", "Refresh Explorer", false)
 	}
 	rootStyle := a.sidebarBand(r.Y + 1)
 	countX := a.sidebarCount(r.X+r.W-1, r.Y+1, fmt.Sprint(len(a.tree)), rootStyle)
@@ -214,7 +214,7 @@ func (a *App) drawTree() {
 	field := a.treeFilterRect
 	a.treeQueryOffset = a.drawSidebarInput(field, a.treeQuery, a.treeQueryCursor, "Filter files (/)", "filter")
 	if a.treeQuery != "" {
-		a.drawButton(r.X+r.W-4, field.Y, "x", "explorer.clearFilter", "Clear Explorer filter (Esc)", false)
+		a.drawButton(r.X+r.W-4, field.Y, a.actionLabel("explorer.clearFilter", "Clear", true), "explorer.clearFilter", "Clear Explorer filter (Esc)", false)
 	}
 	available := max(1, r.H-3)
 	if a.focus == "tree" {
@@ -429,24 +429,30 @@ func matchingBrackets(s string, head int) (int, int) {
 func (a *App) drawPanel() {
 	r := a.panelRect
 	a.fill(rect{r.X, r.Y - 1, r.W, 1}, a.chrome)
-	right := r.X + r.W - 7
-	a.drawButton(right, r.Y-1, "Hide", "view.hidePanel", "Hide panel; keep shell running (Ctrl+J)", false)
-	if a.panel == "Terminal" && a.term != nil && r.W >= 28 {
-		right -= 7
-		a.drawButton(right, r.Y-1, "Kill", "terminal.kill", "End the shell session and close its panel", false)
+	right := r.X + r.W - 1
+	action := func(label, id, hint string, compact bool) bool {
+		label = a.actionLabel(id, label, compact)
+		width := text.Width(label, 4) + 2
+		if right-width < r.X+2 {
+			return false
+		}
+		right -= width
+		a.drawButton(right, r.Y-1, label, id, hint, false)
+		right--
+		return true
 	}
-	label, hint := "Right", "Move panel to the right; keep the shell session"
+	action("Hide", "view.hidePanel", "Hide panel; keep shell running (Ctrl+J)", true)
+	if a.panel == "Terminal" && a.term != nil {
+		action("Kill", "terminal.kill", "Kill: end the shell session and close its panel", true)
+	}
+	label, hint := "Right", "Right: move panel to the right; keep the shell session"
 	if a.panelDock == "right" {
-		label, hint = "Bottom", "Move panel to the bottom; keep the shell session"
+		label, hint = "Bottom", "Bottom: move panel below the editor; keep the shell session"
 	}
-	dockWidth := text.Width(label, 4) + 2
-	if right-dockWidth-1 >= r.X+1 {
-		right -= dockWidth + 1
-		a.drawButton(right, r.Y-1, label, "view.panelDock", hint, false)
-	}
+	action(label, "view.panelDock", hint, r.W < 45)
 	x := r.X + 1
 	choices := []struct{ name, id string }{{"Problems", "view.problems"}, {"Terminal", "view.showTerminal"}}
-	if r.W < 55 {
+	if r.W < 60 {
 		if a.panel == "Terminal" {
 			choices = choices[1:]
 		} else {
@@ -454,17 +460,18 @@ func (a *App) drawPanel() {
 		}
 	}
 	for _, v := range choices {
-		width := len(v.name) + 2
-		if x+width >= right {
+		label := a.actionLabel(v.id, v.name, false)
+		width := text.Width(label, 4) + 2
+		if x+width > right {
 			continue
 		}
-		x += a.drawButton(x, r.Y-1, v.name, v.id, "Show "+v.name, a.panel == v.name) + 1
+		x += a.drawButton(x, r.Y-1, label, v.id, "Show "+v.name, a.panel == v.name) + 1
 	}
 	if right-x > 22 {
 		a.put(x+1, r.Y-1, right-x-2, "F4 Focus · Ctrl+J Hide", a.muted)
 	}
 	if x == r.X+1 {
-		a.put(x, r.Y-1, max(0, right-x-1), fitLabel(a.panel, right-x-1), a.accent.Bold(true))
+		a.put(x, r.Y-1, max(0, right-x), fitLabel(a.panel, right-x), a.accent.Bold(true))
 	}
 	switch a.panel {
 	case "Terminal":

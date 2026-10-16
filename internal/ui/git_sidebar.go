@@ -123,7 +123,7 @@ func (a *App) drawGitSidebar() {
 		a.focus = "git"
 	}
 	a.drawSidebarHeader("SOURCE CONTROL", 4)
-	a.drawButton(r.X+r.W-4, r.Y, "R", "git.refresh", "Refresh Git status (F5)", false)
+	a.drawButton(r.X+r.W-4, r.Y, a.actionLabel("git.refresh", "Refresh", true), "git.refresh", "Refresh Git status (F5)", false)
 	branch := a.git.Branch
 	if branch == "" {
 		branch = "Repository"
@@ -158,10 +158,10 @@ func (a *App) drawGitSidebar() {
 	a.gitMessageRect = rect{r.X + 1, r.Y + 2, r.W - 2, 1}
 	a.gitMessageOffset = a.drawSidebarInput(a.gitMessageRect, a.gitMessage, a.gitMessageCursor, "Commit message… (c)", "gitMessage")
 	x := r.X + 1
-	x += a.drawButton(x, r.Y+3, "Commit", "git.commit", "Commit staged changes; Enter in message field", false) + 1
-	x += a.drawButton(x, r.Y+3, "More", "git.more", "Stage all, unstage all, history and repository details", false) + 1
+	x += a.drawButton(x, r.Y+3, a.actionLabel("git.commit", "Commit", false), "git.commit", "Commit staged changes; Enter in message field", false) + 1
+	x += a.drawButton(x, r.Y+3, a.actionLabel("git.more", "More", true), "git.more", "More: stage all, unstage all, history and repository details", false) + 1
 	if x+5 <= r.X+r.W {
-		a.drawButton(x, r.Y+3, "Log", "git.history", "Focus Git log (h)", a.focus == "gitLog")
+		a.drawButton(x, r.Y+3, a.actionLabel("git.history", "Log", true), "git.history", "Focus Git log (h)", a.focus == "gitLog")
 	}
 	actionY := r.Y + 4
 	if r.H >= 18 {
@@ -175,10 +175,11 @@ func (a *App) drawGitSidebar() {
 		stageID, stageLabel = "git.unstage", "Unstage"
 	}
 	for _, b := range []struct{ label, id, hint string }{{stageLabel, stageID, stageLabel + " selected file (s / u)"}, {"Diff", "git.selectedDiff", "View selected version (Enter)"}, {"Open", "git.open", "Open selected file (o)"}} {
-		if x+len(b.label)+2 > r.X+r.W {
+		label := a.actionLabel(b.id, b.label, b.id == "git.selectedDiff" || b.id == "git.open")
+		if x+text.Width(label, 4)+2 > r.X+r.W {
 			continue
 		}
-		x += a.drawButton(x, actionY, b.label, b.id, b.hint, false) + 1
+		x += a.drawButton(x, actionY, label, b.id, b.hint, false) + 1
 	}
 	staged, changed, conflicts := a.gitCounts()
 	if r.H >= 18 {
@@ -236,7 +237,7 @@ func (a *App) drawGitSidebar() {
 			if row.Group == "STAGED" {
 				id, hint, label = "git.unstageAll", "Unstage all files", "−"
 			}
-			a.drawButton(r.X+r.W-4, y, label, id, hint, false)
+			a.drawButton(r.X+r.W-4, y, a.actionLabel(id, label, true), id, hint, false)
 			continue
 		}
 		e := entries[row.Index]

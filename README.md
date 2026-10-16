@@ -21,7 +21,8 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   for Explorer, Search, and Source Control. Icons highlight on hover and
   selection; hover shows the panel name and shortcut. The default icons use
   Nerd Font glyphs; choose a Nerd Font in your terminal (such as Maple Mono NF),
-  or set `"activityIcons": "unicode"` for ordinary character icons.
+  or set `"activityIcons": "unicode"` for ordinary character icons. This setting
+  applies to toolbar and panel action icons too.
   Each opens a persistent left sidebar; clicking the active activity hides it.
   Ctrl+B hides/restores the sidebar while the activity bar stays visible.
   Drag file tabs to reorder them, or drop a tab on an editor's left/right edge
@@ -31,7 +32,10 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 - Clickable top toolbar: New, Open, Save, Find, Undo/Redo, Split, Terminal,
   More (command palette), and **Help** at the top right. Help opens a scrollable
   shortcut reference showing current keybindings and controls for each panel;
-  Esc closes it. Narrow windows keep the actions that fit;
+  Esc closes it. Actions use the same icon family as the activity bar; wider
+  windows also show names for New, Open, Save, Find, Terminal, and Help.
+  Undo, redo, split, refresh, and menu controls use compact icons. Hover shows
+  the operation and shortcut. Narrow windows use icon buttons for more actions;
   all actions remain available under More/F1. Raised button faces show hover,
   press, active, and disabled states; hover shows an action hint.
 - Explorer, Search, and Source Control share inset headers, count badges,
@@ -123,7 +127,9 @@ focus. Ctrl+J toggles the bottom panel even with shell
 focus. Click **Hide** in the panel header to hide it and keep the shell running.
 Click **Right** in the panel header to dock it on the right, and **Bottom** to
 return it below the editor. Drag the divider to resize its width or height.
-Position, size, output, and the shell session survive switching and hiding.
+The panel uses an X icon to hide and a trash icon to end the shell; hover
+shows the action before clicking. Position, size, output, and the shell session
+survive switching and hiding.
 Narrow windows temporarily use the bottom layout and restore the right dock
 when there is enough room. The command palette also includes **View: Toggle
 Panel Position (Bottom / Right)**.

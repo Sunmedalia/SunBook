@@ -77,12 +77,12 @@ def main():
             paste("SUNBOOK_KEEP=retained; printf 'SHELL_%s\\n' READY\n")
             wait_for(lambda: b"SHELL_READY" in received, "shell command")
             received.clear()
-            click(92, 18)  # Right docking control in the bottom panel header
-            wait_for(lambda: b"Bottom" in received, "right dock control")
+            click(96, 18)  # Right docking control in the bottom panel header
+            wait_for(lambda: "\uf063".encode() in received, "right dock control")
             paste('printf \'DOCK_%s\\n\' "$SUNBOOK_KEEP"\n')
             wait_for(lambda: b"DOCK_retained" in received, "right dock preserves shell session")
             received.clear()
-            click(92, 2)  # Bottom docking control in the right panel header
+            click(100, 2)  # Bottom docking control in the right panel header
             paste('printf \'BOTTOM_%s\\n\' "$SUNBOOK_KEEP"\n')
             wait_for(lambda: b"BOTTOM_retained" in received, "bottom dock preserves shell session")
             received.clear()
@@ -95,7 +95,7 @@ def main():
             paste('printf \'HIDDEN_%s\\n\' "$SUNBOOK_KEEP"\n')
             wait_for(lambda: b"HIDDEN_retained" in received, "Hide button preserves shell")
             received.clear()
-            click(100, 18)  # Kill, then F4 must create a new session
+            click(104, 18)  # Kill, then F4 must create a new session
             os.write(master, b"\x1bOS")
             paste('printf \'KILL_%s\\n\' "${SUNBOOK_KEEP-unset}"\n')
             wait_for(lambda: b"KILL_unset" in received, "Kill ends shell session")
@@ -141,7 +141,7 @@ def main():
 
             # Open browses folders; Quick Open reuses the workspace index and jumps.
             received.clear()
-            click(20, 1)  # top Open works regardless of sidebar focus
+            click(23, 1)  # top Open works regardless of sidebar focus
             wait_for(lambda: b"Open File" in received, "Open browser")
             os.write(master, b"\x0c")  # Ctrl+L: edit the directory path
             paste(str(nested.parent))

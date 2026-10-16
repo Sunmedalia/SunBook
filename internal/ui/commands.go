@@ -171,7 +171,7 @@ func (a *App) palette() {
 	var items []item
 	for _, cmd := range a.commands {
 		cmd := cmd
-		items = append(items, item{Label: cmd.Label, Detail: cmd.Key, Action: func() { a.execute(cmd.ID) }})
+		items = append(items, item{Label: a.actionLabel(cmd.ID, cmd.Label, false), Detail: cmd.Key, Action: func() { a.execute(cmd.ID) }})
 	}
 	a.setModal(&modal{Title: "Command Palette", InputEnabled: true, Filter: true, Items: items, Hint: "Type a command · Enter runs · Esc closes"})
 }
