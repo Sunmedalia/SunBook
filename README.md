@@ -22,7 +22,9 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   Ctrl+B hides/restores the sidebar while the activity bar stays visible.
   File tabs, draggable panel borders, and two side-by-side editors.
 - Clickable top toolbar: New, Open, Save, Find, Undo/Redo, Split, Terminal,
-  and More (command palette). Narrow windows keep the actions that fit;
+  More (command palette), and **Help** at the top right. Help opens a scrollable
+  shortcut reference showing current keybindings and controls for each panel;
+  Esc closes it. Narrow windows keep the actions that fit;
   all actions remain available under More/F1. Raised button faces show hover,
   press, active, and disabled states; hover shows an action hint.
 - A slate blue workbench with warm gold accents, inset input fields, framed

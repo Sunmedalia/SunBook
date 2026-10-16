@@ -102,8 +102,10 @@ func (a *App) drawToolbar() {
 		a.put(x, 0, 8, "SUNBOOK", a.accent.Bold(true))
 		x = 10
 	}
-	moreX := w - 7
+	helpX := w - 7
+	moreX := helpX - 7
 	a.drawButton(moreX, 0, "More", "app.commands", "All commands (F1)", false)
+	a.drawButton(helpX, 0, "Help", "app.help", "Keyboard shortcuts", false)
 	actions := []struct {
 		label, id, hint  string
 		active, optional bool

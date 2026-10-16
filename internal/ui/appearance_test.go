@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/gdamore/tcell/v3"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,5 +76,36 @@ func TestModalFrameAndFooterDoNotActivateHiddenCommands(t *testing.T) {
 	click(a, a.modalRect.X+3, m.ListY)
 	if a.modal != nil {
 		t.Fatal("visible command row did not activate")
+	}
+}
+
+func TestHelpButtonShowsConfiguredShortcutsAndClosesSafely(t *testing.T) {
+	a, _ := testApp(t)
+	a.typeInput("keep draft")
+	a.cfg.Keybindings = map[string]string{"ctrl+s": "", "ctrl+alt+s": "file.save"}
+	a.registerCommands()
+	a.workspaceSearch()
+	clickCommand(t, a, "app.help")
+	m := a.modal
+	if m == nil || m.Title != "Keyboard Shortcuts" {
+		t.Fatal("Help did not open shortcut reference")
+	}
+	saveLine := ""
+	for _, line := range m.Body {
+		if strings.HasSuffix(line, "File: Save") {
+			saveLine = line
+		}
+	}
+	if !strings.HasPrefix(saveLine, "ctrl+alt+s ") {
+		t.Fatal("Help ignored shortcut overrides", saveLine)
+	}
+	a.draw()
+	a.key(tcell.NewEventKey(tcell.KeyPgDn, "", 0))
+	if m.Top == 0 {
+		t.Fatal("shortcut reference did not scroll")
+	}
+	a.key(tcell.NewEventKey(tcell.KeyEsc, "", 0))
+	if a.modal != nil || a.focus != "searchInput" || a.view().Doc.Buffer.String() != "keep draft" {
+		t.Fatal("Help changed focus or document")
 	}
 }

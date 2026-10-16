@@ -169,14 +169,78 @@ func (a *App) palette() {
 	a.setModal(&modal{Title: "Command Palette", InputEnabled: true, Filter: true, Items: items, Hint: "Type a command · Enter runs · Esc closes"})
 }
 func (a *App) help() {
-	s := "SUNBOOK\n\n"
+	var body strings.Builder
+	body.WriteString("KEYBOARD SHORTCUTS\nCurrent keybindings, including your configured overrides.\n\n")
 	for _, c := range a.commands {
-		if c.Key != "" {
-			s += fmt.Sprintf("%-24s %s\n", c.Key, c.Label)
+		var keys []string
+		for key, id := range a.bindings {
+			if id == c.ID {
+				keys = append(keys, key)
+			}
 		}
+		if len(keys) == 0 {
+			continue
+		}
+		sort.Strings(keys)
+		fmt.Fprintf(&body, "%-26s %s\n", strings.Join(keys, " / "), c.Label)
 	}
-	s += "\nF1: command palette · F6: cycle focus · Esc: close overlay / clear extra cursors\nMouse: click / drag / double click / triple click / wheel\nAlt+click: add cursor · drag borders: resize panels\nTerminal: F4 focuses editor; Ctrl+J / [Hide] hides panel; [Kill] ends shell.\nSidebar: [E] Explorer / [S] Search / [G] Git; Ctrl+B hides.\nExplorer: click filter or press /; Esc clears; Down selects results.\nGit sidebar: s/u stage/unstage · S/U all · Enter diff · c message · / filter · m actions · h history\nModal input: Ctrl+U clears · Up/Down choose · Enter accepts\nAll actions are accessible through the command palette.\n"
-	a.showText("Keyboard Shortcuts", s)
+	body.WriteString(`
+EDITOR & MOUSE
+Arrows / Home / End       Move cursor; Shift extends selection
+Ctrl+Left / Right        Move by word
+Click / drag             Place cursor / select text
+Double / triple click    Select word / line
+Alt+click                Add cursor
+Mouse wheel              Scroll; drag borders to resize panes
+
+OPEN / QUICK OPEN
+Ctrl+L                   Edit folder path in Open
+Enter / Go               Navigate the edited folder path
+Alt+Up / Up button       Browse the parent folder
+Tab                      Complete file / folder; leave path field
+Ctrl+Enter               Open selected file in the other editor
+file:line:column         Jump when opening, e.g. main.go:20:5
+Esc                      Cancel path edit, then close the picker
+
+EXPLORER & SEARCH
+/ or Ctrl+F (Explorer)   Focus the filename filter
+Up / Down + Enter        Select and open a result
+Esc (Explorer filter)    Clear the filter
+Tab (Search results)     Return to search input
+Click file heading       Expand / collapse search results
+Aa / W / .* / ...        Search case / word / regex / file globs
+
+SOURCE CONTROL
+s / u                    Stage / unstage selected file
+S / U                    Stage / unstage all files
+Enter / d                View selected comparison
+D                        View staged comparison
+o                        Open working file for editing
+c                        Focus commit message; Enter commits staged files
+/ or Ctrl+F              Filter changed paths
+h / Tab                  Focus log / switch lists
+m                        More Git actions
+
+COMPARISON
+Tab                      Switch comparison pane
+Up / Down / wheel        Scroll both sides
+Left / Right             Pan the focused pane
+n / p                    Next / previous change
+o                        Open working file for editing
+Esc                      Close comparison
+
+TERMINAL & DIALOGS
+Hide                     Hide terminal while keeping shell running
+Kill                     End shell session
+Ordinary terminal keys   Sent to the shell, including Ctrl+C
+Ctrl+U (input)           Clear input
+Up / Down / Enter        Choose / accept a dialog item
+Esc                      Close a dialog
+
+All actions are available under More / the command palette.
+`)
+	a.showText("Keyboard Shortcuts", body.String())
+	a.modal.Hint = "↑/↓ or wheel scrolls · PgUp/PgDn pages · ←/→ pans · Esc closes"
 }
 func (a *App) nextTab(dir int) {
 	if len(a.docs) == 0 {

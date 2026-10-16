@@ -159,6 +159,16 @@ def main():
             wait_for(lambda: "你好".encode() in received or b"original" in received,
                      "Quick Open line jump")
 
+            # Help stays at the top right and closes without editing the file.
+            received.clear()
+            click(107, 1)
+            wait_for(lambda: b"Keyboard Shortcuts" in received and b"ctrl+s" in received,
+                     "Help button shows shortcuts")
+            received.clear()
+            os.write(master, b"\x1b[6~\x1b")  # PageDown, then Escape
+            # Let the legacy terminal parser finish Escape before sending a mouse sequence.
+            wait_for(lambda: b"\x1b[?25h" in received, "Help closes and restores editor cursor")
+
             # Use the top New button and save a new buffer through Save As.
             click(13, 1)
             paste("toolbar draft\n")
@@ -196,7 +206,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, Open browser, Quick Open, toolbar, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, toolbar, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()
