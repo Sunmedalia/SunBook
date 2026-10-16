@@ -42,6 +42,17 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 - Unicode grapheme movement/deletion, automatic indentation and bracket pairing,
   line comments, line movement, multi-cursor edits, and transactional undo/redo.
 - Syntax highlighting, file search/replace, quick open, and workspace search.
+- Ctrl+P ranks workspace files by filename and fuzzy path matching, with recent
+  files first when the query is empty. The file index is shared with Explorer.
+  Add `:line[:column]` to jump (for example `main.go:20:5`); columns follow the
+  displayed text, including tabs and wide characters. Recent files last for
+  the current session.
+- Ctrl+O opens a file browser with folders first, path completion with Tab,
+  and Alt+Up to go to the parent directory. Enter or click opens a file or
+  browses a folder. Relative, absolute, and `~/` paths are supported. A new
+  filename opens an empty buffer that is written only when saved. Ctrl+Enter
+  in either picker opens the file in the other editor group (when the terminal
+  can report that key combination). Errors keep the picker open.
 - UTF-8/BOM and LF/CRLF preservation, atomic saves with original permissions,
   dirty-file prompts, disk change detection, and reload/overwrite choices.
 - Binary and non-UTF-8 files are rejected with a message. Existing symlinks are
@@ -52,7 +63,7 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 | Key | Action |
 | --- | --- |
 | F1 / Ctrl+Shift+P | Command palette (all actions) |
-| Ctrl+P / Ctrl+O | Quick open / open a path |
+| Ctrl+P / Ctrl+O | Quick open / browse and open files |
 | Ctrl+N / Ctrl+W | New file / close tab |
 | Ctrl+S / Ctrl+Shift+S | Save / Save As |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
@@ -178,8 +189,15 @@ branch management, or discard-changes command in this release.
 
 Use `S` or Ctrl+Shift+F for the Search sidebar. It searches after a short
 typing pause, or immediately with Enter / Go, using ripgrep regexes and smart
-case. Results are grouped by file; click a match or select it with arrows and
-Enter to jump to its line and column. Clear resets results; Stop cancels work.
+case. **Aa** forces case-sensitive matching, **W** matches whole words, and
+`.*` switches between regular expressions and literal text. **...** reveals
+include/exclude file globs, separated by commas (for example `src/**, *.go` and
+`vendor/**`). Small windows use prompts for these fields. Results arrive as
+search progresses, grouped into collapsible file sections with counts. Matching
+text is highlighted even far into a long line; hover shows the full path. Click
+a match or select it with arrows and Enter to jump and select its text. Tab
+returns to the search input. At 2,000 matches the list reports its limit; narrow
+the query or paths for more targeted results. Clear resets results; Stop cancels work.
 The query, results, and scroll position remain when switching sidebars.
 Explorer's filter and Git selection also keep their state. Terminal and
 Problems stay in the independent bottom panel.

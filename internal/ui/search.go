@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,9 +14,15 @@ import (
 	"sunbook/internal/text"
 )
 
+type searchOptions struct {
+	Regex, Case, Word bool
+	Include, Exclude  string
+}
+
 type searchHit struct {
 	Path, Text   string
 	Line, Column int
+	End          int
 }
 
 func (a *App) workspaceSearch() { a.showSidebar("Search") }
@@ -36,6 +44,8 @@ func (a *App) clearWorkspaceSearch() {
 	a.searchSelected = 0
 	a.searchTop = 0
 	a.searchError = ""
+	a.searchTruncated = false
+	a.searchCollapsed = nil
 }
 func (a *App) setSearchQuery(query string) {
 	a.stopWorkspaceSearch()
@@ -45,6 +55,8 @@ func (a *App) setSearchQuery(query string) {
 	a.searchSelected = 0
 	a.searchTop = 0
 	a.searchError = ""
+	a.searchTruncated = false
+	a.searchCollapsed = nil
 	if a.searchQuery != "" {
 		a.searchDue = time.Now().Add(250 * time.Millisecond)
 	}
@@ -63,12 +75,38 @@ func (a *App) startWorkspaceSearch() {
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.searchCancel = cancel
 	a.searchRunning = true
+	a.searchTruncated = false
 	a.searchError = ""
 	seq := a.searchSeq
 	root, query := a.root, a.searchQuery
+	options := a.searchOptions
 	go func() {
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "rg", "--json", "--smart-case", "--", query, root)
+		args := []string{"--no-config", "--json"}
+		if options.Case {
+			args = append(args, "--case-sensitive")
+		} else {
+			args = append(args, "--smart-case")
+		}
+		if !options.Regex {
+			args = append(args, "--fixed-strings")
+		}
+		if options.Word {
+			args = append(args, "--word-regexp")
+		}
+		for _, g := range strings.Split(options.Include, ",") {
+			if g = strings.TrimSpace(g); g != "" {
+				args = append(args, "--glob", g)
+			}
+		}
+		for _, g := range strings.Split(options.Exclude, ",") {
+			if g = strings.TrimSpace(g); g != "" {
+				args = append(args, "--glob", "!"+g)
+			}
+		}
+		args = append(args, "--", query, ".")
+		cmd := exec.CommandContext(ctx, "rg", args...)
+		cmd.Dir = root
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
 		pipe, err := cmd.StdoutPipe()
@@ -83,6 +121,8 @@ func (a *App) startWorkspaceSearch() {
 		scanner := bufio.NewScanner(pipe)
 		scanner.Buffer(make([]byte, 4096), 4*1024*1024)
 		var results []searchHit
+		truncated := false
+		lastPublish := time.Now()
 		for scanner.Scan() {
 			var row struct {
 				Type string `json:"type"`
@@ -96,6 +136,7 @@ func (a *App) startWorkspaceSearch() {
 					Line       int `json:"line_number"`
 					Submatches []struct {
 						Start int `json:"start"`
+						End   int `json:"end"`
 					} `json:"submatches"`
 				} `json:"data"`
 			}
@@ -103,12 +144,17 @@ func (a *App) startWorkspaceSearch() {
 				continue
 			}
 			for _, match := range row.Data.Submatches {
-				results = append(results, searchHit{Path: row.Data.Path.Text, Text: row.Data.Lines.Text, Line: row.Data.Line - 1, Column: match.Start})
+				results = append(results, searchHit{Path: filepath.Join(root, row.Data.Path.Text), Text: row.Data.Lines.Text, Line: row.Data.Line - 1, Column: match.Start, End: match.End})
 				if len(results) >= 2000 {
 					break
 				}
 			}
+			if len(results)%64 == 0 || time.Since(lastPublish) > 100*time.Millisecond {
+				a.publishSearch(seq, root, results, "", false, false)
+				lastPublish = time.Now()
+			}
 			if len(results) >= 2000 {
+				truncated = true
 				cancel()
 				break
 			}
@@ -129,19 +175,46 @@ func (a *App) startWorkspaceSearch() {
 				}
 			}
 		}
-		a.finishSearch(seq, root, results, message)
+		a.publishSearch(seq, root, results, message, true, truncated)
 	}()
 }
 func (a *App) finishSearch(seq int, root string, results []searchHit, message string) {
+	a.publishSearch(seq, root, results, message, true, false)
+}
+func (a *App) publishSearch(seq int, root string, results []searchHit, message string, done, truncated bool) {
+	snapshot := append([]searchHit(nil), results...)
+	sort.SliceStable(snapshot, func(i, j int) bool {
+		a, b := snapshot[i], snapshot[j]
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.Column < b.Column
+	})
 	a.post(func() {
 		if seq != a.searchSeq || root != a.root {
 			return
 		}
-		a.searchRunning = false
-		a.searchResults = results
-		a.searchSelected = max(0, min(a.searchSelected, len(results)-1))
-		a.searchTop = 0
+		var selected searchHit
+		had := a.searchSelected >= 0 && a.searchSelected < len(a.searchResults)
+		if had {
+			selected = a.searchResults[a.searchSelected]
+		}
+		a.searchResults = snapshot
+		a.searchRunning = !done
+		a.searchTruncated = truncated
 		a.searchError = message
+		a.searchSelected = max(0, min(a.searchSelected, len(snapshot)-1))
+		if had {
+			for i, h := range snapshot {
+				if h.Path == selected.Path && h.Line == selected.Line && h.Column == selected.Column {
+					a.searchSelected = i
+					break
+				}
+			}
+		}
 		if message != "" {
 			a.notify("Search: " + message)
 		}
@@ -192,12 +265,18 @@ func (a *App) searchResultsKey(e *tcell.EventKey, name string) {
 	case "down":
 		a.moveSearchSelection(1)
 	case "pageup":
-		a.moveSearchSelection(-max(1, a.sideRect.H-5))
+		a.moveSearchSelection(-max(1, a.sideRect.Y+a.sideRect.H-a.searchBodyStart()))
 	case "pagedown":
-		a.moveSearchSelection(max(1, a.sideRect.H-5))
+		a.moveSearchSelection(max(1, a.sideRect.Y+a.sideRect.H-a.searchBodyStart()))
 	case "enter":
 		a.openSearchResult()
-	case "ctrl+f":
+	case "home":
+		a.searchSelected = 0
+		a.moveSearchSelection(0)
+	case "end":
+		a.searchSelected = len(a.searchResults) - 1
+		a.moveSearchSelection(0)
+	case "tab", "ctrl+f":
 		a.focus = "searchInput"
 		a.searchCursor = len(a.searchQuery)
 	case "escape":

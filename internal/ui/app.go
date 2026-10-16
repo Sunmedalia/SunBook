@@ -39,19 +39,25 @@ type button struct {
 }
 type item struct {
 	Label, Detail string
+	Path          string
+	Dir           bool
 	Action        func()
 }
 type modal struct {
-	Title, Input, Hint    string
-	Cursor                int
-	Items, Visible        []item
-	Selected, Top         int
-	InputEnabled, Filter  bool
-	Body                  []string
-	BodyTop, ListY, ListH int
-	BodyLeft              int
-	Submit                func(string, int)
-	Changed               func(string)
+	Open                         *openPicker
+	Subtitle, Placeholder, Empty string
+	Accept                       func(bool)
+	Complete, Parent             func()
+	Title, Input, Hint           string
+	Cursor                       int
+	Items, Visible               []item
+	Selected, Top                int
+	InputEnabled, Filter         bool
+	Body                         []string
+	BodyTop, ListY, ListH        int
+	BodyLeft                     int
+	Submit                       func(string, int)
+	Changed                      func(string)
 }
 type command struct {
 	ID, Label, Key string
@@ -158,6 +164,14 @@ type App struct {
 	searchError                                           string
 	searchSeq                                             int
 	searchDue                                             time.Time
+	searchOptions                                         searchOptions
+	searchIncludeCursor, searchIncludeOffset              int
+	searchExcludeCursor, searchExcludeOffset              int
+	searchIncludeRect, searchExcludeRect                  rect
+	searchPathsVisible, searchTruncated                   bool
+	searchCollapsed                                       map[string]bool
+	searchGroupHits                                       []searchGroupHit
+	recentFiles                                           []string
 	rects                                                 [2]rect
 	sideRect, panelRect                                   rect
 	tabs                                                  []struct {
@@ -199,6 +213,10 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 			return nil, err
 		}
 	}
+	// Match the canonical paths used by editor.Open so recent files and indexes agree.
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a := &App{screen: screen, cfg: cfg, root: root, ctx: ctx, cancel: cancel, updates: make(chan func(), 256), sidebar: true, sidebarWidth: 26, panelHeight: 12, focus: "editor", panel: "Terminal", splitRatio: .5, expanded: map[string]bool{root: true}, clients: map[string]*lsp.Client{}, starting: map[string]bool{}, serverErrors: map[string]string{}, opened: map[*editor.Document]*lsp.Client{}, diagnostics: map[string]lsp.Diagnostics{}, highlight: map[*editor.Document]highlights{}, highlightPending: map[*editor.Document]int{}}
 	for i := range a.viewCache {
@@ -206,6 +224,7 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 	}
 	a.highlightDue = map[*editor.Document]time.Time{}
 	a.sidebarView = "Explorer"
+	a.searchOptions.Regex = true
 	a.highlightRunning = map[*editor.Document]bool{}
 	a.initTheme()
 	a.screen.SetStyle(a.base)
@@ -335,6 +354,7 @@ func (a *App) addDocument(d *editor.Document) {
 	a.scheduleHighlight(d)
 }
 func (a *App) activate(d *editor.Document) {
+	a.rememberFile(d.Path)
 	a.gitViewSeq++
 	if a.comparison != nil {
 		a.comparison.Active = false
@@ -615,6 +635,7 @@ func (a *App) saveForce(d *editor.Document, done func()) {
 	}
 }
 func (a *App) saved(d *editor.Document) {
+	a.rememberFile(d.Path)
 	a.notify("Saved " + d.Name())
 	if c := a.opened[d]; c != nil {
 		c.Notify("textDocument/didSave", map[string]any{"textDocument": map[string]string{"uri": lsp.URI(d.Path)}, "text": d.Buffer.String()})
@@ -742,6 +763,9 @@ func (a *App) switchWorkspace() {
 		if !st.IsDir() {
 			a.notify("Choose a directory")
 			return
+		}
+		if real, err := filepath.EvalSymlinks(path); err == nil {
+			path = real
 		}
 		var next func(int)
 		next = func(i int) {

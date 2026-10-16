@@ -100,8 +100,16 @@ func (a *App) key(e *tcell.EventKey) {
 		}
 		return
 	}
+	if id := a.bindings[name]; id == "file.open" || id == "file.quickOpen" {
+		a.execute(id)
+		return
+	}
 	if a.focus == "searchInput" {
 		a.searchInputKey(e, name)
+		return
+	}
+	if a.focus == "searchInclude" || a.focus == "searchExclude" {
+		a.searchPathKey(e, name)
 		return
 	}
 	if a.focus == "search" {
@@ -507,6 +515,10 @@ func (a *App) filterModal() {
 	if m == nil {
 		return
 	}
+	if m.Open != nil {
+		a.updateOpenModal(m)
+		return
+	}
 	m.Visible = nil
 	for _, it := range m.Items {
 		if !m.Filter || fuzzy(it.Label, m.Input) {
@@ -533,6 +545,10 @@ func (a *App) modalAccept() {
 	if m == nil {
 		return
 	}
+	if m.Accept != nil {
+		m.Accept(false)
+		return
+	}
 	s := m.Input
 	idx := m.Selected
 	a.modal = nil
@@ -545,6 +561,23 @@ func (a *App) modalAccept() {
 }
 func (a *App) modalKey(e *tcell.EventKey, name string) {
 	m := a.modal
+	switch name {
+	case "ctrl+enter":
+		if m.Accept != nil {
+			m.Accept(true)
+			return
+		}
+	case "tab":
+		if m.Complete != nil {
+			m.Complete()
+			return
+		}
+	case "alt+up":
+		if m.Parent != nil {
+			m.Parent()
+			return
+		}
+	}
 	if !m.InputEnabled && len(m.Body) > 0 {
 		switch name {
 		case "left":
@@ -577,7 +610,7 @@ func (a *App) modalKey(e *tcell.EventKey, name string) {
 		a.modal = nil
 		return
 	case "enter":
-		if len(m.Items) > 0 || m.Submit != nil {
+		if len(m.Items) > 0 || m.Submit != nil || m.Accept != nil {
 			a.modalAccept()
 		} else {
 			a.modal = nil

@@ -81,31 +81,6 @@ func (a *App) toggleTree() {
 		a.showError(a.open(e.Path))
 	}
 }
-func (a *App) quickOpen() {
-	m := &modal{Title: "Quick Open", InputEnabled: true, Filter: true, Hint: "Type a path fragment · Enter opens · Esc cancels"}
-	a.setModal(m)
-	root := a.root
-	go func() {
-		ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
-		defer cancel()
-		paths, err := workspaceFiles(ctx, root)
-		items := make([]item, 0, len(paths))
-		for _, p := range paths {
-			p := p
-			rel, _ := filepath.Rel(root, p)
-			items = append(items, item{Label: rel, Action: func() { a.showError(a.open(p)) }})
-		}
-		a.post(func() {
-			if a.modal == m {
-				if err != nil {
-					a.showError(err)
-				}
-				m.Items = items
-				a.filterModal()
-			}
-		})
-	}()
-}
 func (a *App) jump(path string, line, col int) {
 	if e := a.open(path); e != nil {
 		a.showError(e)

@@ -16,7 +16,7 @@ import (
 func (a *App) registerCommands() {
 	a.commands = []command{
 		{"file.new", "File: New File", "ctrl+n", func() { a.addDocument(editor.New()) }},
-		{"file.open", "File: Open File…", "ctrl+o", func() { a.prompt("Open File", "", func(s string) { a.showError(a.open(s)) }) }},
+		{"file.open", "File: Open File…", "ctrl+o", a.fileOpen},
 		{"file.quickOpen", "File: Quick Open…", "ctrl+p", a.quickOpen},
 		{"file.folder", "File: Open Folder…", "", a.switchWorkspace},
 		{"file.save", "File: Save", "ctrl+s", func() { a.save(a.view().Doc, nil) }},
@@ -88,6 +88,11 @@ func (a *App) registerCommands() {
 		{"search.run", "Search: Run Workspace Search", "", a.startWorkspaceSearch},
 		{"search.clear", "Search: Clear Workspace Search", "", a.clearWorkspaceSearch},
 		{"search.stop", "Search: Stop Workspace Search", "", a.stopWorkspaceSearch},
+		{"search.case", "Search: Toggle Match Case", "", func() { a.searchOptions.Case = !a.searchOptions.Case; a.rerunSearchOptions() }},
+		{"search.word", "Search: Toggle Whole Word", "", func() { a.searchOptions.Word = !a.searchOptions.Word; a.rerunSearchOptions() }},
+		{"search.regex", "Search: Toggle Regular Expression", "", func() { a.searchOptions.Regex = !a.searchOptions.Regex; a.rerunSearchOptions() }},
+		{"search.paths", "Search: Include / Exclude Files", "", a.toggleSearchPaths},
+		{"search.error", "Search: Show Error", "", func() { a.showText("Search Error", a.searchError) }},
 		{"language.complete", "Language: Trigger Completion", "ctrl+space", func() { a.requestCompletion(true) }},
 		{"language.hover", "Language: Hover", "alt+h", a.hover},
 		{"language.definition", "Language: Go to Definition", "f12", func() { a.definition(false) }},
@@ -296,6 +301,10 @@ func (a *App) paste(s string) {
 	}
 	if a.focus == "filter" {
 		a.insertTreeQuery(s)
+		return
+	}
+	if a.focus == "searchInclude" || a.focus == "searchExclude" {
+		a.insertSearchPath(s)
 		return
 	}
 	if a.focus == "searchInput" {

@@ -15,8 +15,10 @@ import (
 // File indexing is lazy and independent of expanded directories. Filtering must
 // find a file even if none of its ancestor directories have been expanded.
 func workspaceFiles(ctx context.Context, root string) ([]string, error) {
-	out, err := exec.CommandContext(ctx, "rg", "--files", "--null", "--hidden", "-g", "!.git", root).Output()
-	if err == nil {
+	out, err := exec.CommandContext(ctx, "rg", "--no-config", "--files", "--null", "--hidden", "-g", "!.git", root).Output()
+	// Exit 1 means no visible files, not failure; falling back would leak ignored files.
+	exit, noFiles := err.(*exec.ExitError)
+	if err == nil || (noFiles && exit.ExitCode() == 1) {
 		var paths []string
 		for _, p := range strings.Split(string(out), "\x00") {
 			if p != "" {
@@ -126,6 +128,14 @@ func (a *App) loadTreeIndex() {
 				return
 			}
 			a.treeIndexLoading = false
+			if m := a.modal; m != nil && m.Open != nil && m.Open.Quick {
+				m.Open.Loading = false
+				m.Open.Paths = files
+				if err != nil {
+					m.Open.Error = err.Error()
+				}
+				a.updateOpenModal(m)
+			}
 			if err != nil {
 				a.showError(err)
 				return

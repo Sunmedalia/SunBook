@@ -90,6 +90,9 @@ func (a *App) draw() {
 	a.buttons = nil
 	a.treeFilterRect = rect{}
 	a.searchInputRect = rect{}
+	a.searchIncludeRect = rect{}
+	a.searchExcludeRect = rect{}
+	a.searchGroupHits = nil
 	a.gitMessageRect = rect{}
 	a.gitFilterRect = rect{}
 	a.sideHits = nil
@@ -558,6 +561,13 @@ func (a *App) drawModal() {
 		a.put(x+width-1, row, 1, "│", border)
 	}
 	a.put(x+2, y, width-4, " "+fitLabel(m.Title, width-6)+" ", a.accent.Background(a.chrome.GetBackground()).Bold(true))
+	subtitle := m.Subtitle
+	if m.Open != nil && m.Open.Quick && m.Selected >= 0 && m.Selected < len(m.Visible) {
+		subtitle = m.Visible[m.Selected].Path
+	}
+	if subtitle != "" {
+		a.put(x+2, y+1, width-4, tailLabel(subtitle, width-4), a.chrome.Foreground(a.colors.muted))
+	}
 	contentY := y + 2
 	if m.InputEnabled {
 		fieldStyle := a.inputStyle(true)
@@ -567,7 +577,11 @@ func (a *App) drawModal() {
 		if text.Width(m.Input[:m.Cursor], a.cfg.TabSize) >= inputWidth {
 			offset = text.Offset(m.Input, text.Width(m.Input[:m.Cursor], a.cfg.TabSize)-inputWidth+1, a.cfg.TabSize)
 		}
-		a.put(x+2, contentY, inputWidth, m.Input[offset:], fieldStyle)
+		if m.Input == "" && m.Placeholder != "" {
+			a.put(x+2, contentY, inputWidth, m.Placeholder, fieldStyle.Foreground(a.colors.muted))
+		} else {
+			a.put(x+2, contentY, inputWidth, m.Input[offset:], fieldStyle)
+		}
 		a.screen.ShowCursor(x+2+text.Width(m.Input[offset:m.Cursor], a.cfg.TabSize), contentY)
 		contentY += 2
 	} else {
@@ -629,6 +643,8 @@ func (a *App) drawModal() {
 			offset := text.Offset(line, m.BodyLeft, a.cfg.TabSize)
 			a.put(x+2, contentY+i, width-4, line[offset:], style)
 		}
+	} else if m.Open != nil {
+		a.put(x+2, contentY, width-4, fitLabel(m.Empty, width-4), a.muted)
 	} else if m.Filter {
 		a.put(x+2, contentY, width-4, "No matches", a.muted)
 	}

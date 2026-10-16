@@ -130,6 +130,25 @@ def main():
             click(3, 6)  # activity S restores query and results
             wait_for(lambda: b"1 results" in received, "Search state survives activity switches")
 
+            # Open browses folders; Quick Open reuses the workspace index and jumps.
+            received.clear()
+            click(20, 1)  # top Open works regardless of sidebar focus
+            wait_for(lambda: b"Open File" in received, "Open browser")
+            paste("nested/")
+            wait_for(lambda: b"needle.txt" in received,
+                     "Open directory contents")
+            received.clear()
+            os.write(master, b"\r")
+            wait_for(lambda: b"nested sample" in received, "Open browser opens selected file")
+            received.clear()
+            os.write(master, b"\x10")  # Ctrl+P
+            wait_for(lambda: b"Quick Open" in received, "Quick Open picker")
+            paste("notes.txt:3:1")
+            received.clear()
+            os.write(master, b"\r")
+            wait_for(lambda: "你好".encode() in received or b"original" in received,
+                     "Quick Open line jump")
+
             # Use the top New button and save a new buffer through Save As.
             click(13, 1)
             paste("toolbar draft\n")
@@ -167,7 +186,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, toolbar, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, Open browser, Quick Open, toolbar, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()
