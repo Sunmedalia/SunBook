@@ -24,6 +24,14 @@ func syntaxSpans(path, source string, base tcell.Style, syntax string) []tokenSp
 	if syntax == "" {
 		syntax = "github-dark"
 	}
+	terminalPalette := syntax == "terminal-dark" || syntax == "terminal-light"
+	if terminalPalette {
+		light := syntax == "terminal-light"
+		syntax = "github-dark"
+		if light {
+			syntax = "github"
+		}
+	}
 	theme := styles.Get(syntax)
 	if theme == nil {
 		theme = styles.Fallback
@@ -36,6 +44,9 @@ func syntaxSpans(path, source string, base tcell.Style, syntax string) []tokenSp
 		if entry.Colour.IsSet() {
 			style = style.Foreground(tcell.NewRGBColor(int32(entry.Colour.Red()), int32(entry.Colour.Green()), int32(entry.Colour.Blue())))
 		}
+		if terminalPalette {
+			style = base.Foreground(terminalTokenColor(token.Type))
+		}
 		if entry.Bold == chroma.Yes {
 			style = style.Bold(true)
 		}
@@ -46,4 +57,27 @@ func syntaxSpans(path, source string, base tcell.Style, syntax string) []tokenSp
 		offset += len(token.Value)
 	}
 	return spans
+}
+
+func terminalTokenColor(token chroma.TokenType) tcell.Color {
+	switch {
+	case token.InCategory(chroma.Comment):
+		return tcell.ColorGray
+	case token.InCategory(chroma.Keyword):
+		return tcell.ColorPurple
+	case token.InSubCategory(chroma.LiteralString):
+		return tcell.ColorGreen
+	case token.InSubCategory(chroma.LiteralNumber):
+		return tcell.ColorTeal
+	case token == chroma.NameFunction || token == chroma.NameBuiltin:
+		return tcell.ColorBlue
+	case token == chroma.NameClass || token == chroma.NameNamespace:
+		return tcell.ColorOlive
+	case token.InCategory(chroma.Operator):
+		return tcell.ColorTeal
+	case token.InCategory(chroma.Error):
+		return tcell.ColorRed
+	default:
+		return tcell.ColorDefault
+	}
 }

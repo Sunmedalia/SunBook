@@ -3,6 +3,7 @@ package ui
 import (
 	"sunbook/internal/config"
 	"sunbook/internal/editor"
+	"sunbook/internal/terminal"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -16,15 +17,32 @@ type palette struct {
 }
 
 func mix(a, b tcell.Color, percent int32) tcell.Color {
+	if !a.Valid() || !b.Valid() {
+		return tcell.ColorDefault
+	}
 	ar, ag, ab := a.RGB()
 	br, bg, bb := b.RGB()
 	return tcell.NewRGBColor(ar+(br-ar)*percent/100, ag+(bg-ag)*percent/100, ab+(bb-ab)*percent/100)
 }
 
 func (a *App) initTheme() {
+	a.themeColorCache = nil
+	a.terminalColors = a.readTerminalColors()
+	a.themeSyntax = a.cfg.Theme.Syntax
 	bg := tcell.GetColor(a.cfg.Theme.Background)
 	fg := tcell.GetColor(a.cfg.Theme.Foreground)
 	accent := tcell.GetColor(a.cfg.Theme.Accent)
+	if a.cfg.Theme.Name == "auto" || a.cfg.Theme.Name == "terminal-default" {
+		if a.terminalColors.Background.Valid() {
+			bg = a.terminalColors.Background
+		}
+		if lightBackground(bg) {
+			fg, accent, a.themeSyntax = tcell.GetColor("#24292e"), tcell.GetColor("#0969da"), "github"
+		}
+		if a.terminalColors.Foreground.Valid() {
+			fg = a.terminalColors.Foreground
+		}
+	}
 	a.base = tcell.StyleDefault.Background(bg).Foreground(fg)
 	a.colors = palette{
 		border: mix(bg, fg, 18), raised: mix(bg, fg, 13), hover: mix(bg, fg, 23),
@@ -55,6 +73,96 @@ func (a *App) initTheme() {
 	a.accent = a.base.Foreground(accent)
 	a.chrome = a.base.Background(mix(bg, fg, 5))
 	a.selected = a.base.Background(a.colors.selection)
+	if a.usesTerminalPalette() {
+		a.base = a.base.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault)
+		a.colors.muted, a.colors.disabled, a.colors.border = tcell.ColorGray, tcell.ColorGray, tcell.ColorGray
+		a.colors.folder, a.colors.success, a.colors.danger = tcell.ColorBlue, tcell.ColorGreen, tcell.ColorRed
+		a.colors.onAccent = tcell.ColorDefault
+		a.muted = a.base.Foreground(a.colors.muted)
+		a.accent = a.base.Foreground(tcell.ColorBlue)
+		a.chrome = a.chrome.Foreground(tcell.ColorDefault)
+		a.selected = a.selected.Foreground(tcell.ColorDefault)
+		a.themeSyntax = "terminal-dark"
+		if lightBackground(bg) {
+			a.themeSyntax = "terminal-light"
+		}
+	}
+}
+
+type terminalColorSource interface {
+	DefaultColors() terminal.DefaultColors
+	RequestColors()
+}
+
+func (a *App) readTerminalColors() terminal.DefaultColors {
+	colors := terminal.ColorsFromEnv()
+	if tty, ok := a.screen.Tty(); ok {
+		if source, ok := tty.(terminalColorSource); ok {
+			actual := source.DefaultColors()
+			if actual.Foreground.Valid() {
+				colors.Foreground = actual.Foreground
+			}
+			if actual.Background.Valid() {
+				colors.Background = actual.Background
+			}
+		}
+	}
+	return colors
+}
+
+func (a *App) requestTerminalColors() {
+	if a.cfg.Theme.Name != "auto" && a.cfg.Theme.Name != "terminal-default" {
+		return
+	}
+	if tty, ok := a.screen.Tty(); ok {
+		if source, ok := tty.(terminalColorSource); ok {
+			source.RequestColors()
+		}
+	}
+}
+
+func (a *App) refreshTerminalTheme() {
+	if (a.cfg.Theme.Name == "auto" || a.cfg.Theme.Name == "terminal-default") && a.readTerminalColors() != a.terminalColors {
+		a.applyTheme(a.cfg.Theme)
+	}
+}
+
+func (a *App) usesTerminalPalette() bool {
+	return a.cfg.Theme.Name == "terminal-default" || (a.cfg.Theme.Name == "auto" && !a.terminalColors.Background.Valid())
+}
+
+var ansiPalette = []tcell.Color{
+	tcell.ColorBlack, tcell.ColorMaroon, tcell.ColorGreen, tcell.ColorOlive,
+	tcell.ColorNavy, tcell.ColorPurple, tcell.ColorTeal, tcell.ColorSilver,
+	tcell.ColorGray, tcell.ColorRed, tcell.ColorLime, tcell.ColorYellow,
+	tcell.ColorBlue, tcell.ColorFuchsia, tcell.ColorAqua, tcell.ColorWhite,
+}
+
+// Route all workbench surfaces through this function so dialogs, selections,
+// diff rows and gutters cannot accidentally paint a background in default mode.
+// Child terminal cells bypass it: explicit shell/application colors stay intact.
+func (a *App) workbenchStyle(style tcell.Style) tcell.Style {
+	if !a.usesTerminalPalette() {
+		return style
+	}
+	bg := style.GetBackground()
+	if bg == a.colors.selection || bg == a.colors.hover {
+		style = style.Reverse(true)
+	}
+	fg := style.GetForeground()
+	if fg.IsRGB() {
+		if a.themeColorCache == nil {
+			a.themeColorCache = map[tcell.Color]tcell.Color{}
+		}
+		if cached, ok := a.themeColorCache[fg]; ok {
+			fg = cached
+		} else {
+			converted := tcell.FindColor(fg, ansiPalette)
+			a.themeColorCache[fg] = converted
+			fg = converted
+		}
+	}
+	return style.Background(tcell.ColorDefault).Foreground(fg)
 }
 
 func lightBackground(color tcell.Color) bool {
@@ -71,8 +179,12 @@ func (a *App) chooseTheme() {
 			label += " · current"
 			selected = len(choices)
 		}
+		swatch := [3]string{preset.Theme.Background, preset.Theme.Foreground, preset.Theme.Accent}
+		if preset.Theme.Name == "auto" || preset.Theme.Name == "terminal-default" {
+			swatch = [3]string{}
+		}
 		choices = append(choices, item{Label: label, Detail: preset.Description,
-			Swatch: [3]string{preset.Theme.Background, preset.Theme.Foreground, preset.Theme.Accent}, Action: func() {
+			Swatch: swatch, Action: func() {
 				a.applyTheme(preset.Theme)
 				if a.cfg.FilePath != "" {
 					if err := config.SaveTheme(a.cfg.FilePath, preset.Theme.Name); err != nil {
@@ -91,6 +203,7 @@ func (a *App) applyTheme(theme config.Theme) {
 	a.cfg.Theme = theme
 	a.themeSeq++
 	a.initTheme()
+	a.requestTerminalColors()
 	a.screen.SetStyle(a.base)
 	a.highlight = map[*editor.Document]highlights{}
 	a.highlightPending = map[*editor.Document]int{}
@@ -104,7 +217,7 @@ func (a *App) applyTheme(theme config.Theme) {
 }
 
 func (a *App) rehighlightComparison(c *gitComparison) {
-	pair, base, syntax, seq := c.Pair, a.base, a.cfg.Theme.Syntax, a.themeSeq
+	pair, base, syntax, seq := c.Pair, a.base, a.themeSyntax, a.themeSeq
 	go func() {
 		view := &gitComparison{Pair: pair}
 		view.highlight(base, syntax)

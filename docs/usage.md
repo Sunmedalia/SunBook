@@ -48,7 +48,8 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   visible. The configured background, foreground, and accent also shape the
   surrounding surfaces and selection colors.
 - Six color themes: SunBook, Tokyo Night, Dracula, Nord, Gruvbox Dark, and
-  GitHub Light. Use **Preferences: Color Theme…** in F1, or Ctrl+K then Ctrl+T
+  GitHub Light, plus **Auto** and **Terminal Default** modes.
+  Use **Preferences: Color Theme…** in F1, or Ctrl+K then Ctrl+T
   in the editor. The picker shows palette swatches and supports filtering.
   Selecting a theme updates the workbench and syntax colors immediately and
   remembers it in your active config file, including a custom `--config` path.
@@ -149,10 +150,18 @@ survive switching and hiding.
 Narrow windows temporarily use the bottom layout and restore the right dock
 when there is enough room. The command palette also includes **View: Toggle
 Panel Position (Bottom / Right)**.
-Click **Kill** to end the shell session and close its panel. F4 switches focus
+Click **Terminal +** to create an independent shell. Click the session number/name
+to switch sessions; each keeps its environment, output, and scroll position.
+Inactive shells continue running. The command palette also offers New Terminal,
+Switch Session, Next Session, and Previous Session. Click **Kill** to close only
+the current session and switch to another; closing the last one hides the panel.
+F4 switches focus
 between the visible shell and the editor, and opens a hidden terminal again.
 Opening a terminal tab is lazy: it does not execute
 a shell on editor startup. After the shell exits, F4 starts a fresh session.
+Exited sessions retain their output until closed. Help contains the terminal
+shortcuts; the panel header shows session controls. Closing SunBook or switching
+workspaces closes all terminal sessions.
 
 Traditional terminals cannot distinguish some combinations (for example,
 Ctrl+H and Backspace, or Ctrl+Space and NUL), and may reserve Cmd/Alt shortcuts.
@@ -284,7 +293,14 @@ to command IDs; set an ID to `""` to disable a binding. The modifier order is
 `ctrl+alt+shift+key`; chords use a space, such as `ctrl+k ctrl+o`.
 
 Set a theme with `"theme": {"name": "nord"}`. Available names are `sunbook`,
-`tokyo-night`, `dracula`, `nord`, `gruvbox-dark`, and `github-light`. You can
+`tokyo-night`, `dracula`, `nord`, `gruvbox-dark`, `github-light`, `auto`, and
+`terminal-default`. Auto queries the host terminal's default foreground/background
+with OSC 10/11 and selects matching light/dark syntax colors. It rechecks on focus
+and every two seconds. Unsupported terminals fall back to `COLORFGBG`, then
+terminal defaults. Terminal Default leaves every workbench background unset,
+preserving terminal transparency, and uses default/ANSI text and syntax colors.
+Selections use terminal reverse video. Explicit colors emitted by child terminal
+applications remain intact. You can
 override a preset's `background`, `foreground`, `accent`, or `syntax` fields;
 existing configs with just custom colors continue to work. Picking a theme in
 the UI replaces those theme overrides and preserves other config settings.

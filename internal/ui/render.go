@@ -15,6 +15,10 @@ import (
 )
 
 func (a *App) put(x, y, width int, s string, style tcell.Style) {
+	a.putCell(x, y, width, s, a.workbenchStyle(style))
+}
+
+func (a *App) putCell(x, y, width int, s string, style tcell.Style) {
 	if width <= 0 {
 		return
 	}
@@ -39,7 +43,9 @@ func (a *App) put(x, y, width int, s string, style tcell.Style) {
 		pos += w
 	}
 }
-func (a *App) fill(r rect, style tcell.Style) { a.screen.FillArea(r.X, r.Y, r.W, r.H, ' ', style) }
+func (a *App) fill(r rect, style tcell.Style) {
+	a.screen.FillArea(r.X, r.Y, r.W, r.H, ' ', a.workbenchStyle(style))
+}
 func (a *App) layout() {
 	w, h := a.screen.Size()
 	rail := 0
@@ -446,9 +452,9 @@ func (a *App) drawPanel() {
 		right--
 		return true
 	}
-	action("Hide", "view.hidePanel", "Hide panel; keep shell running (Ctrl+J)", true)
+	action("Hide", "view.hidePanel", "Hide panel; keep shell sessions running", true)
 	if a.panel == "Terminal" && a.term != nil {
-		action("Kill", "terminal.kill", "Kill: end the shell session and close its panel", true)
+		action("Kill", "terminal.kill", "Close the current shell session", true)
 	}
 	label, hint := "Right", "Right: move panel to the right; keep the shell session"
 	if a.panelDock == "right" {
@@ -467,13 +473,39 @@ func (a *App) drawPanel() {
 	for _, v := range choices {
 		label := a.actionLabel(v.id, v.name, false)
 		width := text.Width(label, 4) + 2
-		if x+width > right {
+		limit := right
+		if a.panel == "Terminal" {
+			limit -= 4 // Keep the new-session button accessible in narrow docks.
+			if len(a.terminals) > 1 {
+				limit -= 4
+			}
+		}
+		if x+width > limit && v.name == "Terminal" {
+			label = a.actionLabel(v.id, v.name, true)
+			width = text.Width(label, 4) + 2
+		}
+		if x+width > limit {
 			continue
 		}
 		x += a.drawButton(x, r.Y-1, label, v.id, "Show "+v.name, a.panel == v.name) + 1
 	}
-	if right-x > 22 {
-		a.put(x+1, r.Y-1, right-x-2, "F4 Focus · Ctrl+J Hide", a.muted)
+	if a.panel == "Terminal" {
+		if x+3 <= right {
+			x += a.drawButton(x, r.Y-1, "+", "terminal.new", "New terminal session", false) + 1
+		}
+		if tab := a.terminalActive; tab != nil && right-x >= 3 {
+			label := fmt.Sprintf("%d · %s ▾", tab.id, filepath.Base(a.cfg.Shell))
+			if tab.exited {
+				label = fmt.Sprintf("%d · exited ▾", tab.id)
+			}
+			if text.Width(label, 4)+2 > right-x {
+				label = fmt.Sprintf("%d▾", tab.id)
+				if text.Width(label, 4)+2 > right-x {
+					label = fitLabel(fmt.Sprint(tab.id), right-x-2)
+				}
+			}
+			a.drawButton(x, r.Y-1, label, "terminal.switch", "Switch terminal session", false)
+		}
 	}
 	if x == r.X+1 {
 		a.put(x, r.Y-1, max(0, right-x), fitLabel(a.panel, right-x), a.accent.Bold(true))
@@ -488,7 +520,7 @@ func (a *App) drawPanel() {
 func (a *App) drawTerminal() {
 	r := a.panelRect
 	if a.term == nil {
-		a.put(r.X+1, r.Y+1, r.W-2, "Press F4 to start a shell in this workspace.", a.muted)
+		a.put(r.X+1, r.Y+1, r.W-2, "Start a shell with Terminal +", a.muted)
 		return
 	}
 	_ = a.term.Resize(max(1, r.W), max(1, r.H))
@@ -523,7 +555,7 @@ func (a *App) drawTerminal() {
 			if cell.Style.Underline != 0 {
 				style = style.Underline(true)
 			}
-			a.put(r.X+x, r.Y+y, cell.Width, cellContent, style)
+			a.putCell(r.X+x, r.Y+y, cell.Width, cellContent, style)
 			x += max(0, cell.Width-1)
 		}
 	}

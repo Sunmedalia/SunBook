@@ -7,6 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"sunbook/internal/config"
+	"sunbook/internal/terminal"
 	"sunbook/internal/ui"
 )
 
@@ -40,14 +41,22 @@ func run() error {
 		fmt.Println("Config:", *path)
 		return nil
 	}
-	screen, err := tcell.NewScreen()
+	tty, err := tcell.NewDevTty()
 	if err != nil {
 		return err
 	}
+	colorTTY := terminal.NewColorTty(tty)
+	screen, err := tcell.NewTerminfoScreenFromTty(colorTTY)
+	if err != nil {
+		_ = tty.Close()
+		return err
+	}
 	if err = screen.Init(); err != nil {
+		_ = tty.Close()
 		return err
 	}
 	defer screen.Fini()
+	colorTTY.RequestColors()
 	app, err := ui.New(screen, cfg, flag.Arg(0))
 	if err != nil {
 		return err

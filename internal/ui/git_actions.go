@@ -160,7 +160,7 @@ func (a *App) readGitComparison(root string, read func(context.Context, string) 
 	a.gitViewSeq++
 	seq := a.gitViewSeq
 	base := a.base
-	syntax, themeSeq := a.cfg.Theme.Syntax, a.themeSeq
+	syntax, themeSeq := a.themeSyntax, a.themeSeq
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 		defer cancel()

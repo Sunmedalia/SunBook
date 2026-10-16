@@ -36,12 +36,26 @@ def main():
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 110, 0, 0))
         env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor",
+                   NO_COLOR="", TCELL_TRUECOLOR="enable",
                    TCELL_KEYBOARD_PROTOCOL="legacy", TCELL_NEGOTIATE="disable")
         proc = subprocess.Popen([binary, "--config", str(config), str(path)], stdin=slave, stdout=slave,
                                 stderr=slave, cwd=workspace, env=env, start_new_session=True,
                                 preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
         os.close(slave)
         received = bytearray()
+        probe_tail = b""
+        host_colors = {b"10": b"rgb:2020/2020/2020", b"11": b"rgb:f8f8/f8f8/f8f8"}
+
+        def read_output():
+            nonlocal probe_tail
+            chunk = os.read(master, 65536)
+            received.extend(chunk)
+            probes = probe_tail + chunk
+            for code, color in host_colors.items():
+                query = b"\x1b]" + code + b";?\a"
+                for _ in range(probes.count(query)):
+                    os.write(master, b"\x1b]" + code + b";" + color + b"\x1b\\")
+            probe_tail = probes[-6:]
 
         def wait_for(predicate, description, timeout=8):
             deadline = time.monotonic() + timeout
@@ -51,7 +65,7 @@ def main():
                 readable, _, _ = select.select([master], [], [], .05)
                 if readable:
                     try:
-                        received.extend(os.read(master, 65536))
+                        read_output()
                     except OSError as exc:
                         if exc.errno != errno.EIO:
                             raise
@@ -79,9 +93,28 @@ def main():
             # F4 focuses the shell. Ctrl+J and Hide must preserve its session.
             received.clear()
             os.write(master, b"\x1bOS")
-            wait_for(lambda: b"Hide" in received, "terminal controls")
+            wait_for(lambda: "\uf1f8".encode() in received, "terminal controls")
             paste("SUNBOOK_KEEP=retained; printf 'SHELL_%s\\n' READY\n")
             wait_for(lambda: b"SHELL_READY" in received, "shell command")
+            received.clear()
+            click(61, 18)  # Terminal + creates a separate shell.
+            paste("SUNBOOK_SECOND=second; printf 'SECOND_%s\\n' \"${SUNBOOK_KEEP-unset}\"\n")
+            wait_for(lambda: b"SECOND_unset" in received, "new terminal has independent environment")
+            received.clear()
+            click(69, 18)  # Session selector.
+            wait_for(lambda: b"Switch Terminal" in received, "terminal session picker")
+            paste("Terminal 1")
+            os.write(master, b"\r")
+            paste("printf 'FIRST_%s\\n' \"$SUNBOOK_KEEP\"\n")
+            wait_for(lambda: b"FIRST_retained" in received, "switching restores original shell")
+            received.clear()
+            click(69, 18)
+            wait_for(lambda: b"Switch Terminal" in received, "switch back to second terminal")
+            paste("Terminal 2")
+            os.write(master, b"\r")
+            click(104, 18)  # Kill only the second shell, automatically restoring the first.
+            paste("printf 'SURVIVING_%s\\n' \"$SUNBOOK_KEEP\"\n")
+            wait_for(lambda: b"SURVIVING_retained" in received, "Kill preserves other terminal sessions")
             received.clear()
             click(96, 18)  # Right docking control in the bottom panel header
             wait_for(lambda: "\uf063".encode() in received, "right dock control")
@@ -202,7 +235,8 @@ def main():
             wait_for(lambda: b"\x1b[?25h" in received, "Help closes and restores editor cursor")
 
             # Theme selection applies live and preserves the active config.
-            for theme, label in [("github-light", "GitHub Light"), ("sunbook", "SunBook")]:
+            for theme, label in [("github-light", "GitHub Light"), ("auto", "Auto"),
+                                 ("terminal-default", "Terminal Default"), ("sunbook", "SunBook")]:
                 received.clear()
                 os.write(master, b"\x1bOP")
                 wait_for(lambda: b"Command Palette" in received, "theme command palette")
@@ -213,6 +247,12 @@ def main():
                 os.write(master, b"\r")
                 wait_for(lambda: json.loads(config.read_text()).get("theme", {}).get("name") == theme,
                          f"persist {theme} theme")
+                if theme == "auto":
+                    wait_for(lambda: b"48;2;248;248;248" in received, "Auto uses queried light terminal background")
+                    host_colors[b"10"], host_colors[b"11"] = b"rgb:eeee/eeee/eeee", b"rgb:1212/1212/1212"
+                    received.clear()
+                    os.write(master, b"\x1b[I")  # Host focus requests an updated palette.
+                    wait_for(lambda: b"48;2;18;18;18" in received, "Auto follows terminal palette changes")
             if json.loads(config.read_text())["shell"] != "/bin/sh":
                 raise AssertionError("theme selection overwrote shell configuration")
 
@@ -264,12 +304,14 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
         finally:
+            # Closing the PTY master first also releases a macOS child that is
+            # exiting while its tty output is blocked after a failed assertion.
+            os.close(master)
             if proc.poll() is None:
                 proc.kill()
-                proc.wait()
-            os.close(master)
+                proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

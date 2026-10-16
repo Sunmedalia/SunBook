@@ -164,6 +164,11 @@ type App struct {
 	termOffset                                            int
 	termExited                                            bool
 	termSeq                                               int
+	terminals                                             []*terminalTab
+	terminalActive                                        *terminalTab
+	themeSyntax                                           string
+	terminalColors                                        terminal.DefaultColors
+	themeColorCache                                       map[tcell.Color]tcell.Color
 	fileCheck                                             bool
 	searchCancel                                          context.CancelFunc
 	searchQuery                                           string
@@ -299,9 +304,11 @@ func (a *App) Run() error {
 		case f := <-a.updates:
 			f()
 		case <-diskTick.C:
+			a.requestTerminalColors()
 			a.checkFiles()
 			a.refreshGit()
 		case <-tick.C:
+			a.refreshTerminalTheme()
 			a.flushHighlights()
 			if !a.searchDue.IsZero() && !time.Now().Before(a.searchDue) {
 				a.startWorkspaceSearch()
@@ -342,6 +349,7 @@ func (a *App) Run() error {
 				a.mouse(e)
 			case *tcell.EventFocus:
 				if e.Focused {
+					a.requestTerminalColors()
 					a.checkFiles()
 				}
 			}
@@ -358,9 +366,7 @@ func (a *App) Close() {
 	if a.searchCancel != nil {
 		a.searchCancel()
 	}
-	if a.term != nil {
-		a.term.Close()
-	}
+	a.closeTerminals()
 	for _, c := range a.clients {
 		c.Close()
 	}
@@ -531,56 +537,13 @@ func (a *App) hidePanel() {
 	}
 }
 func (a *App) killTerminal() {
-	s := a.term
-	a.termSeq++
-	a.term = nil
-	a.termOffset = 0
-	a.termExited = false
-	if s != nil {
-		s.Close()
-	}
-	if a.panel == "Terminal" {
-		a.hidePanel()
-	}
-	a.notify("Shell session ended. F4 opens a new session.")
+	a.removeTerminal(a.terminalActive)
 }
 func (a *App) startTerminal() {
 	if a.term != nil && !a.termExited {
 		return
 	}
-	if a.term != nil {
-		a.term.Close()
-	}
-	a.termSeq++
-	seq := a.termSeq
-	a.layout()
-	r := a.panelRect
-	s, e := terminal.Start(a.cfg.Shell, a.root, max(1, r.W), max(1, r.H), func(data []byte) {
-		a.post(func() {
-			if a.term != nil && seq == a.termSeq {
-				a.term.Feed(data)
-			}
-		})
-	}, func(err error) {
-		a.post(func() {
-			if seq != a.termSeq {
-				return
-			}
-			a.termExited = true
-			if err != nil {
-				a.notify("Shell exited: " + err.Error())
-			} else {
-				a.notify("Shell exited. Press F4 to start a new session.")
-			}
-		})
-	})
-	if e != nil {
-		a.showError(e)
-		a.focus = "editor"
-		return
-	}
-	a.term = s
-	a.termExited = false
+	a.newTerminal()
 }
 func (a *App) checkFiles() {
 	if a.fileCheck {
@@ -842,11 +805,7 @@ func (a *App) switchWorkspace() {
 			a.highlightPending = map[*editor.Document]int{}
 			a.highlightDue = map[*editor.Document]time.Time{}
 			a.highlightRunning = map[*editor.Document]bool{}
-			if a.term != nil {
-				a.termSeq++
-				a.term.Close()
-				a.term = nil
-			}
+			a.closeTerminals()
 			a.root = path
 			a.clearWorkspaceSearch()
 			a.git = gitservice.Status{}

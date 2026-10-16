@@ -90,6 +90,10 @@ func (a *App) registerCommands() {
 		}},
 		{"view.hidePanel", "View: Hide Bottom Panel", "", a.hidePanel},
 		{"terminal.kill", "Terminal: Kill Shell Session", "", a.killTerminal},
+		{"terminal.new", "Terminal: New Terminal", "", a.newTerminal},
+		{"terminal.switch", "Terminal: Switch Session…", "", a.chooseTerminal},
+		{"terminal.next", "Terminal: Next Session", "", func() { a.nextTerminal(1) }},
+		{"terminal.previous", "Terminal: Previous Session", "", func() { a.nextTerminal(-1) }},
 		{"view.nextFocus", "View: Focus Next Panel", "f6", a.cycleFocus},
 		{"view.problems", "View: Problems", "", func() { a.panel = "Problems"; a.panelVisible = true; a.focus = "problems" }},
 		{"view.git", "View: Source Control", "ctrl+shift+g", func() { a.showSidebar("Git") }},
@@ -246,9 +250,13 @@ o                        Open working file for editing
 Esc                      Close comparison
 
 TERMINAL & DIALOGS
+F4                       Open terminal / switch shell and editor focus
+Ctrl+J                   Show / hide panel; keep all shells running
+Terminal +               Create an independent shell session
+Session number / name    Choose a running or exited terminal
 Right / Bottom           Dock panel; drag its divider to resize
 Hide                     Hide terminal while keeping shell running
-Kill                     End shell session
+Kill                     Close current session; switch to another if available
 Ordinary terminal keys   Sent to the shell, including Ctrl+C
 Ctrl+U (input)           Clear input
 Up / Down / Enter        Choose / accept a dialog item

@@ -119,7 +119,7 @@ func (a *App) drawToolbar() {
 		{"Undo", "edit.undo", "Undo (Ctrl+Z)", false, true},
 		{"Redo", "edit.redo", "Redo (Ctrl+Y)", false, true},
 		{"Split", "view.split", "Toggle split editor (Ctrl+\\)", a.split, false},
-		{"Terminal", "view.showTerminal", "Show terminal (F4 focuses; Ctrl+J hides panel)", a.panelVisible && a.panel == "Terminal", false},
+		{"Terminal", "view.showTerminal", "Show terminal", a.panelVisible && a.panel == "Terminal", false},
 	}
 	for _, action := range actions {
 		compact := w < 100 || action.iconOnly
