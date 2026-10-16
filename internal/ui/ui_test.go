@@ -259,8 +259,12 @@ func TestConfiguredBindingsAndHighlightCoalescing(t *testing.T) {
 	a.bindings["f1"] = "file.new"
 	old := a.view().Doc
 	a.key(tcell.NewEventKey(tcell.KeyF1, "", 0))
-	if a.view().Doc == old || a.modal != nil {
+	if a.modal == nil || a.modal.Title != "New File" {
 		t.Fatal("function key override ignored")
+	}
+	a.modalAccept()
+	if a.view().Doc == old {
+		t.Fatal("new-file command did not create an untitled document for empty input")
 	}
 	a.bindings["ctrl+e ctrl+x"] = "view.split"
 	a.key(tcell.NewEventKey(tcell.KeyCtrlE, "", 0))

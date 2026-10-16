@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"sunbook/internal/terminal"
 )
@@ -60,6 +59,7 @@ func (a *App) selectTerminal(tab *terminalTab) {
 	if tab == nil || tab.closed {
 		return
 	}
+	a.terminalMenu = nil
 	if a.terminalActive != nil {
 		a.terminalActive.offset = a.termOffset
 	}
@@ -94,6 +94,7 @@ func (a *App) removeTerminal(tab *terminalTab) {
 }
 
 func (a *App) closeTerminals() {
+	a.terminalMenu = nil
 	for _, tab := range a.terminals {
 		tab.closed = true
 		tab.session.Close()
@@ -103,26 +104,24 @@ func (a *App) closeTerminals() {
 }
 
 func (a *App) chooseTerminal() {
+	if a.terminalMenu != nil {
+		a.terminalMenu = nil
+		return
+	}
 	if len(a.terminals) == 0 {
 		a.newTerminal()
 		return
 	}
-	var choices []item
 	selected := 0
 	for i, tab := range a.terminals {
-		label := fmt.Sprintf("Terminal %d · %s", tab.id, filepath.Base(a.cfg.Shell))
 		if tab == a.terminalActive {
 			selected = i
-			label += " · current"
 		}
-		state := "Running"
-		if tab.exited {
-			state = "Exited · output retained"
-		}
-		choices = append(choices, item{Label: label, Detail: state, Action: func() { a.selectTerminal(tab) }})
 	}
-	a.setModal(&modal{Title: "Switch Terminal", InputEnabled: true, Filter: true, Items: choices, Selected: selected,
-		Placeholder: "Filter sessions…", Hint: "↑/↓ choose · Enter switches · Esc cancels"})
+	a.panelVisible, a.panel, a.focus = true, "Terminal", "terminal"
+	a.scrollDrag, a.tabDrag, a.completion = nil, nil, nil
+	a.completionDue = zeroTime
+	a.terminalMenu = &terminalMenu{Selected: selected}
 }
 
 func (a *App) nextTerminal(dir int) {

@@ -64,6 +64,7 @@ func (a *App) setTreeQuery(s string) {
 	a.treeQuery = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)
 	a.treeQueryCursor = len(a.treeQuery)
 	a.treeSelected = 0
+	a.treePath = ""
 	a.treeTop = 0
 	a.applyTreeFilter()
 	if strings.TrimSpace(a.treeQuery) != "" && !a.treeIndexReady {
@@ -106,8 +107,38 @@ func (a *App) applyTreeFilter() {
 			}
 		}
 	}
-	a.treeSelected = max(0, min(a.treeSelected, len(a.tree)-1))
+	if a.treePath == a.root {
+		a.treeSelected = -1
+	} else {
+		found := false
+		for i, entry := range a.tree {
+			if entry.Path == a.treePath {
+				a.treeSelected, found = i, true
+				break
+			}
+		}
+		if !found {
+			a.treePath = ""
+			a.treeSelected = max(0, min(a.treeSelected, len(a.tree)-1))
+		}
+	}
 	a.treeTop = max(0, min(a.treeTop, max(0, len(a.tree)-1)))
+}
+
+func (a *App) selectTree(index int) {
+	if index < 0 {
+		a.treeSelected, a.treePath, a.newFileDir = -1, a.root, a.root
+		return
+	}
+	if index >= len(a.tree) {
+		return
+	}
+	entry := a.tree[index]
+	a.treeSelected, a.treePath = index, entry.Path
+	a.newFileDir = entry.Path
+	if !entry.Dir {
+		a.newFileDir = filepath.Dir(entry.Path)
+	}
 }
 func (a *App) loadTreeIndex() {
 	if a.treeIndexReady || a.treeIndexLoading {
@@ -167,6 +198,7 @@ func (a *App) treeFilterKey(e *tcell.EventKey, name string) {
 		a.toggleTree()
 	case "down", "up":
 		a.focus = "tree"
+		a.selectTree(a.treeSelected)
 	case "left":
 		a.treeQueryCursor = text.Prev(a.treeQuery, a.treeQueryCursor)
 	case "right":

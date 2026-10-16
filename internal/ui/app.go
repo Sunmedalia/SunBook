@@ -56,6 +56,7 @@ type modal struct {
 	Items, Visible               []item
 	Selected, Top                int
 	InputEnabled, Filter         bool
+	Compact                      bool
 	Body                         []string
 	BodyTop, ListY, ListH        int
 	BodyLeft                     int
@@ -114,6 +115,8 @@ type App struct {
 	treeIndexSeq                                          int
 	treeIndexCancel                                       context.CancelFunc
 	treeSelected, treeTop                                 int
+	treePath, newFileDir                                  string
+	newFileDirs                                           map[*editor.Document]string
 	expanded                                              map[string]bool
 	treeSeq                                               int
 	modal                                                 *modal
@@ -166,6 +169,7 @@ type App struct {
 	termSeq                                               int
 	terminals                                             []*terminalTab
 	terminalActive                                        *terminalTab
+	terminalMenu                                          *terminalMenu
 	themeSyntax                                           string
 	terminalColors                                        terminal.DefaultColors
 	themeColorCache                                       map[tcell.Color]tcell.Color
@@ -652,6 +656,7 @@ func (a *App) saveForce(d *editor.Document, done func()) {
 	}
 }
 func (a *App) saved(d *editor.Document) {
+	delete(a.newFileDirs, d)
 	a.keepDocument(d)
 	a.rememberFile(d.Path)
 	a.notify("Saved " + d.Name())
@@ -664,12 +669,16 @@ func (a *App) saved(d *editor.Document) {
 	a.refreshGit()
 }
 func (a *App) saveAs(d *editor.Document, done func()) {
-	a.prompt("Save As", d.Path, func(s string) {
+	dir := a.root
+	if d.Path == "" && a.newFileDirs[d] != "" {
+		dir = a.newFileDirs[d]
+	}
+	a.compactPrompt("Save As", d.Path, "Filename in "+a.directoryLabel(dir), func(s string) {
 		if strings.TrimSpace(s) == "" {
 			return
 		}
 		if !filepath.IsAbs(s) {
-			s = filepath.Join(a.root, s)
+			s = filepath.Join(dir, s)
 		}
 		s = filepath.Clean(s)
 		for _, other := range a.docs {
@@ -707,6 +716,7 @@ func (a *App) saveAs(d *editor.Document, done func()) {
 				return
 			}
 			a.choose("Overwrite "+filepath.Base(s)+"?", []item{{Label: "Overwrite", Action: finish}, {Label: "Cancel"}})
+			a.modal.Compact = true
 		} else {
 			finish()
 		}
@@ -738,6 +748,7 @@ func (a *App) closeDocument(d *editor.Document) {
 		delete(a.highlight, d)
 		delete(a.highlightPending, d)
 		delete(a.highlightDue, d)
+		delete(a.newFileDirs, d)
 		for i := range a.viewCache {
 			delete(a.viewCache[i], d)
 		}
@@ -842,6 +853,8 @@ func (a *App) switchWorkspace() {
 			a.treeQueryCursor = 0
 			a.treeTop = 0
 			a.treeSelected = 0
+			a.treePath, a.newFileDir = "", ""
+			a.newFileDirs = nil
 			a.docs = nil
 			a.preview = nil
 			a.fileClick = fileClick{}

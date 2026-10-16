@@ -33,6 +33,8 @@ func (a *App) actionIcon(id, label string) string {
 		nerd, plain = "\uf00d", "×"
 	case "terminal.kill":
 		nerd, plain = "\uf1f8", "DEL"
+	case "file.delete", "explorer.delete":
+		nerd, plain = "\uf1f8", "⌫"
 	case "terminal.new":
 		nerd, plain = "+", "+"
 	case "view.panelDock":

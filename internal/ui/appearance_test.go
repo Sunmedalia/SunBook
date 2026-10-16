@@ -74,7 +74,7 @@ func TestModalFrameAndFooterDoNotActivateHiddenCommands(t *testing.T) {
 		t.Fatal("dialog frame or footer activated a command")
 	}
 	click(a, a.modalRect.X+3, m.ListY)
-	if a.modal != nil {
+	if a.modal == nil || a.modal == m || a.modal.Title != "New File" {
 		t.Fatal("visible command row did not activate")
 	}
 }

@@ -81,6 +81,9 @@ func (a *App) key(e *tcell.EventKey) {
 	a.scrollDrag = nil
 	a.fileClick = fileClick{}
 	name := keyName(e)
+	if a.terminalMenu != nil && a.terminalMenuKey(name) {
+		return
+	}
 	if a.tabDrag != nil && name == "escape" {
 		a.tabDrag = nil
 		a.hoverHint = ""
@@ -187,9 +190,11 @@ func (a *App) key(e *tcell.EventKey) {
 	if a.focus == "tree" {
 		switch name {
 		case "up":
-			a.treeSelected = max(0, a.treeSelected-1)
+			a.selectTree(max(-1, a.treeSelected-1))
 		case "down":
-			a.treeSelected = min(len(a.tree)-1, a.treeSelected+1)
+			a.selectTree(min(len(a.tree)-1, a.treeSelected+1))
+		case "delete":
+			a.deleteExplorerFile()
 		case "enter", "right":
 			a.toggleTree()
 		case "left":
@@ -486,6 +491,7 @@ func terminalKey(e *tcell.EventKey) uv.Key {
 }
 
 func (a *App) setModal(m *modal) {
+	a.terminalMenu = nil
 	a.scrollDrag = nil
 	a.tabDrag = nil
 	a.gitViewSeq++
@@ -497,6 +503,20 @@ func (a *App) setModal(m *modal) {
 }
 func (a *App) prompt(title, initial string, submit func(string)) {
 	a.setModal(&modal{Title: title, Input: initial, InputEnabled: true, Hint: "Enter confirms · Ctrl+U clears · Esc cancels", Submit: func(s string, _ int) { submit(s) }})
+}
+func (a *App) compactPrompt(title, initial, placeholder string, submit func(string)) {
+	const hint = "Enter confirms · Ctrl+U clears · Esc cancels"
+	m := &modal{Title: title, Input: initial, Placeholder: placeholder, InputEnabled: true, Compact: true, Hint: hint}
+	m.Changed = func(string) { m.Hint = hint }
+	m.Accept = func(bool) {
+		if strings.TrimSpace(m.Input) == "" {
+			m.Hint = "Enter a filename, or Esc to cancel"
+			return
+		}
+		a.modal = nil
+		submit(m.Input)
+	}
+	a.setModal(m)
 }
 func (a *App) choose(title string, items []item) {
 	a.setModal(&modal{Title: title, Items: items, Hint: "↑/↓ choose · Enter accepts · Esc cancels"})
@@ -719,12 +739,31 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		wheel = 3
 	}
 	a.lastButtons = buttons
+	if a.drag == "terminalMenu" {
+		if !press {
+			a.drag = ""
+		}
+		return
+	}
+	if a.terminalMenu != nil {
+		a.terminalMenuMouse(x, y, fresh, wheel)
+		if fresh {
+			// Consume the matching release too, even after selection closes the
+			// menu: it must not become a mouse event in the shell underneath.
+			a.drag = "terminalMenu"
+		}
+		return
+	}
 	if a.scrollbarMouse(x, y, press, fresh) {
 		return
 	}
 	if a.modal != nil {
 		m := a.modal
 		if a.openNavigationMouse(m, x, y, fresh) {
+			return
+		}
+		if fresh && m.InputEnabled && m.InputRect.contains(x, y) {
+			m.Cursor = m.InputOffset + text.Offset(m.Input[m.InputOffset:], x-m.InputRect.X, a.cfg.TabSize)
 			return
 		}
 		if wheel != 0 {

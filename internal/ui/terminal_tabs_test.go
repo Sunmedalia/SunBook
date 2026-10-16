@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -27,8 +26,12 @@ func TestTerminalSessionsKeepIndependentShellsOutputAndScrollback(t *testing.T) 
 	first.session.Paste("printf 'BACKGROUND_%s\\n' \"$SUNBOOK_TAB\"\n")
 	waitUpdates(t, a, func() bool { return strings.Contains(first.session.VT.String(), "BACKGROUND_first") })
 	clickCommand(t, a, "terminal.switch")
-	a.paste(fmt.Sprint(first.id))
-	a.modalAccept()
+	if a.modal != nil || a.terminalMenu == nil {
+		t.Fatal("session selector must open a dropdown, not a modal")
+	}
+	a.draw()
+	menu := a.terminalMenu
+	click(a, menu.List.X+4, menu.List.Y)
 	if a.term != first.session || a.terminalActive != first || a.focus != "terminal" {
 		t.Fatal("session selector restarted or failed to switch the shell")
 	}
@@ -64,6 +67,56 @@ func TestTerminalSessionsKeepIndependentShellsOutputAndScrollback(t *testing.T) 
 	// Late output and exit callbacks must not touch already-closed emulators.
 	for len(a.updates) > 0 {
 		(<-a.updates)()
+	}
+}
+
+func TestTerminalDropdownAnchorsScrollsAndConsumesInput(t *testing.T) {
+	a, mt := testApp(t)
+	a.cfg.Shell = "/bin/sh"
+	for range 3 {
+		a.newTerminal()
+	}
+	first, last := a.terminals[0], a.terminalActive
+	a.panelHeight = 3 // Only one dropdown row fits beneath this low panel header.
+	clickCommand(t, a, "terminal.switch")
+	a.draw()
+	menu := a.terminalMenu
+	if menu == nil || a.modal != nil || menu.List.H != 1 || menu.Top != 2 {
+		t.Fatal("dropdown did not scroll the active session into view")
+	}
+	for _, button := range a.buttons {
+		if button.Command == "terminal.switch" && menu.Y != button.Y+button.H {
+			t.Fatal("dropdown is not directly below its button")
+		}
+	}
+	a.paste("must not reach the shell")
+	a.key(tcell.NewEventKey(tcell.KeyHome, "", 0))
+	a.draw()
+	if menu.Top != 0 {
+		t.Fatal("keyboard navigation did not scroll the dropdown")
+	}
+	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	if a.terminalActive != first || a.terminalMenu != nil {
+		t.Fatal("Enter did not switch the session and dismiss the dropdown")
+	}
+	a.panelDock, a.panelWidth = "right", 28
+	mt.SetSize(vt.Coord{X: 140, Y: 32})
+	a.screen.Sync()
+	clickCommand(t, a, "terminal.switch")
+	a.draw()
+	menu = a.terminalMenu
+	if menu == nil || menu.X < 0 || menu.X+menu.W > 140 || menu.Y != a.panelRect.Y {
+		t.Fatal("right-docked dropdown overflowed or lost its button anchor")
+	}
+	click(a, menu.List.X+4, menu.List.Y+2)
+	if a.terminalActive != last {
+		t.Fatal("mouse selection did not switch to the chosen terminal")
+	}
+	clickCommand(t, a, "terminal.switch")
+	a.draw()
+	click(a, a.rects[0].X+5, a.rects[0].Y+2)
+	if a.terminalMenu != nil || a.modal != nil || a.terminalActive != last || a.focus != "terminal" {
+		t.Fatal("outside click did not just dismiss the dropdown")
 	}
 }
 

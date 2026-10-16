@@ -15,7 +15,8 @@ import (
 
 func (a *App) registerCommands() {
 	a.commands = []command{
-		{"file.new", "File: New File", "ctrl+n", func() { a.addDocument(editor.New()) }},
+		{"file.new", "File: New File…", "ctrl+n", a.newFile},
+		{"file.newUntitled", "File: New Untitled File", "", func() { a.newUntitled(a.newFileDirectory()) }},
 		{"file.open", "File: Open File…", "ctrl+o", a.fileOpen},
 		{"file.quickOpen", "File: Quick Open…", "ctrl+p", a.quickOpen},
 		{"file.folder", "File: Open Folder…", "", a.switchWorkspace},
@@ -24,6 +25,8 @@ func (a *App) registerCommands() {
 		{"file.saveAll", "File: Save All", "", a.saveAll},
 		{"file.close", "File: Close Tab", "ctrl+w", func() { a.closeDocument(a.view().Doc) }},
 		{"file.rename", "File: Rename…", "", a.renameFile},
+		{"file.delete", "File: Delete Current File…", "", func() { a.confirmDeleteFile(a.view().Doc.Path) }},
+		{"explorer.delete", "Explorer: Delete Selected File…", "", a.deleteExplorerFile},
 		{"file.reload", "File: Reload from Disk", "", a.reload},
 		{"app.quit", "Quit SunBook", "ctrl+q", a.confirmExit},
 		{"app.commands", "Show Command Palette", "ctrl+shift+p", a.palette},
@@ -222,6 +225,9 @@ Single / double click    Preview file / keep file open
 Edit / save preview      Keep file open automatically
 / or Ctrl+F (Explorer)   Focus the filename filter
 Up / Down + Enter        Select and open a result
+Delete (Explorer)        Delete selected file, after confirmation
+New / Ctrl+N             Create in the selected folder / file's parent
+Click workspace name     Use workspace root for new files
 Esc (Explorer filter)    Clear the filter
 Tab (Search results)     Return to search input
 Click file heading       Expand / collapse search results
@@ -253,12 +259,14 @@ TERMINAL & DIALOGS
 F4                       Open terminal / switch shell and editor focus
 Ctrl+J                   Show / hide panel; keep all shells running
 Terminal +               Create an independent shell session
-Session number / name    Choose a running or exited terminal
+Session number / name    Dropdown: click or ↑/↓ + Enter to switch
 Right / Bottom           Dock panel; drag its divider to resize
 Hide                     Hide terminal while keeping shell running
 Kill                     Close current session; switch to another if available
 Ordinary terminal keys   Sent to the shell, including Ctrl+C
 Ctrl+U (input)           Clear input
+New / Ctrl+N             Enter filename, or leave blank for Untitled
+Save an untitled file    Enter filename; Esc keeps the draft
 Up / Down / Enter        Choose / accept a dialog item
 Esc                      Close a dialog
 
@@ -294,7 +302,7 @@ func (a *App) nextTab(dir int) {
 }
 
 func comparisonReadOnlyCommand(id string) bool {
-	return strings.HasPrefix(id, "edit.") || strings.HasPrefix(id, "language.") || id == "file.save" || id == "file.saveAs" || id == "file.rename" || id == "file.reload" || id == "search.find" || id == "search.replace" || id == "navigate.line"
+	return strings.HasPrefix(id, "edit.") || strings.HasPrefix(id, "language.") || id == "file.save" || id == "file.saveAs" || id == "file.rename" || id == "file.delete" || id == "file.reload" || id == "search.find" || id == "search.replace" || id == "navigate.line"
 }
 func (a *App) saveAll() {
 	var next func(int)
@@ -375,6 +383,9 @@ func (a *App) readClipboard() {
 }
 func (a *App) paste(s string) {
 	if s == "" {
+		return
+	}
+	if a.terminalMenu != nil {
 		return
 	}
 	if a.modal != nil {

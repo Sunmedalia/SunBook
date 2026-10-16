@@ -125,6 +125,7 @@ func (a *App) draw() {
 		}
 	}
 	if w < 24 || h < 7 {
+		a.terminalMenu = nil
 		a.put(0, 0, w, "SunBook — enlarge terminal", a.accent)
 		a.screen.Show()
 		return
@@ -201,6 +202,9 @@ func (a *App) draw() {
 	if a.completion != nil {
 		a.drawCompletion()
 	}
+	if a.terminalMenu != nil {
+		a.drawTerminalMenu()
+	}
 	if a.modal != nil {
 		a.drawModal()
 	}
@@ -209,12 +213,16 @@ func (a *App) draw() {
 func (a *App) drawTree() {
 	r := a.sideRect
 	a.fill(r, a.chrome)
-	a.drawSidebarHeader("EXPLORER", 8)
+	a.drawSidebarHeader("EXPLORER", 12)
 	if r.W >= 20 {
-		a.drawButton(r.X+r.W-8, r.Y, a.actionLabel("file.new", "New", true), "file.new", "New file (Ctrl+N)", false)
+		a.drawButton(r.X+r.W-12, r.Y, a.actionLabel("file.new", "New", true), "file.new", "New file in selected folder (Ctrl+N)", false)
+		a.drawButton(r.X+r.W-8, r.Y, a.actionLabel("explorer.delete", "Delete", true), "explorer.delete", "Delete selected file (Delete in Explorer)", false)
 		a.drawButton(r.X+r.W-4, r.Y, a.actionLabel("explorer.refresh", "Refresh", true), "explorer.refresh", "Refresh Explorer", false)
 	}
 	rootStyle := a.sidebarBand(r.Y + 1)
+	if a.treePath == a.root {
+		rootStyle = a.drawFileSelection(rect{r.X, r.Y + 1, r.W, 1}, a.focus == "tree")
+	}
 	countX := a.sidebarCount(r.X+r.W-1, r.Y+1, fmt.Sprint(len(a.tree)), rootStyle)
 	a.put(r.X+1, r.Y+1, countX-r.X-2, fitLabel(filepath.Base(a.root), countX-r.X-2), rootStyle.Bold(true))
 	a.treeFilterRect = rect{r.X + 1, r.Y + 2, max(1, r.W-6), 1}
@@ -504,7 +512,7 @@ func (a *App) drawPanel() {
 					label = fitLabel(fmt.Sprint(tab.id), right-x-2)
 				}
 			}
-			a.drawButton(x, r.Y-1, label, "terminal.switch", "Switch terminal session", false)
+			a.drawButton(x, r.Y-1, label, "terminal.switch", "Switch terminal session", a.terminalMenu != nil)
 		}
 	}
 	if x == r.X+1 {
@@ -559,7 +567,7 @@ func (a *App) drawTerminal() {
 			x += max(0, cell.Width-1)
 		}
 	}
-	if a.focus == "terminal" && a.modal == nil && !a.termExited && a.termOffset == 0 && !vt.CursorHidden() {
+	if a.focus == "terminal" && a.modal == nil && a.terminalMenu == nil && !a.termExited && a.termOffset == 0 && !vt.CursorHidden() {
 		p := vt.CursorPosition()
 		a.screen.ShowCursor(r.X+p.X, r.Y+p.Y)
 	}
@@ -650,6 +658,13 @@ func (a *App) drawModal() {
 	w, h := a.screen.Size()
 	width := max(1, min(96, w-4))
 	height := min(h-2, 20)
+	if m.Compact {
+		width = max(1, min(64, w-4))
+		height = min(h-2, 3+min(6, len(m.Visible)))
+		if m.InputEnabled {
+			height = min(h-2, 4)
+		}
+	}
 	if height < 3 {
 		height = h
 	}
@@ -674,6 +689,9 @@ func (a *App) drawModal() {
 		a.put(x+2, y+1, width-4, tailLabel(subtitle, width-4), a.chrome.Foreground(a.colors.muted))
 	}
 	contentY := y + 2
+	if m.Compact {
+		contentY = y + 1
+	}
 	if m.InputEnabled {
 		fieldStyle := a.inputStyle(m.Open == nil || !m.Open.EditingPath)
 		a.fill(rect{x + 2, contentY, width - 4, 1}, fieldStyle)
@@ -693,6 +711,9 @@ func (a *App) drawModal() {
 			a.screen.ShowCursor(x+2+text.Width(m.Input[offset:m.Cursor], a.cfg.TabSize), contentY)
 		}
 		contentY += 2
+		if m.Compact {
+			contentY--
+		}
 	} else {
 		a.screen.HideCursor()
 	}
@@ -711,6 +732,9 @@ func (a *App) drawModal() {
 		contentY++
 	}
 	available := max(0, y+height-3-contentY)
+	if m.Compact {
+		available = max(0, y+height-2-contentY)
+	}
 	m.ListY = contentY
 	m.ListH = available
 	if len(m.Visible) > 0 {

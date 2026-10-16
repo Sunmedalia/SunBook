@@ -40,6 +40,21 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   the operation and shortcut. Narrow windows use icon buttons for more actions;
   all actions remain available under More/F1. Raised button faces show hover,
   press, active, and disabled states; hover shows an action hint.
+- **New** / Ctrl+N opens a single compact filename input. Leave it empty and
+  press Enter to create an untitled draft, or enter a workspace-relative or
+  absolute filename to create an empty named file. Relative names use the selected
+  Explorer folder, or the parent of the selected file. Click the workspace heading
+  to select the root. The input shows the destination, and untitled drafts remember
+  this directory for their first Save even if the Explorer selection later changes.
+  Existing files are never overwritten by New. The parent directory must already exist.
+  **Save** on an untitled draft opens a single-line
+  filename prompt; Esc keeps its text and tab intact. Named files save directly.
+- Explorer's trash button or **Delete** while its file list has focus opens a compact
+  confirmation for the selected file. Confirming removes it from disk and refreshes
+  Explorer, Search, and Git. Clean tabs close across both editor groups; dirty tabs
+  keep their edits, and Save can recreate the deleted file. The command palette
+  also provides **Explorer: Delete Selected File…** and **File: Delete Current File…**.
+  Deleting a symlink removes the link itself. Folders are excluded from file deletion.
 - Explorer, Search, and Source Control share inset headers, count badges,
   section bands, and clear selections. Explorer adds tree guides; long lists
   have scroll indicators. Git status and log refresh silently.
@@ -151,7 +166,9 @@ Narrow windows temporarily use the bottom layout and restore the right dock
 when there is enough room. The command palette also includes **View: Toggle
 Panel Position (Bottom / Right)**.
 Click **Terminal +** to create an independent shell. Click the session number/name
-to switch sessions; each keeps its environment, output, and scroll position.
+to open a dropdown directly below the button; click a session, or use arrows and
+Enter to switch. Esc or an outside click dismisses the list. Long lists scroll,
+and each session keeps its environment, output, and scroll position.
 Inactive shells continue running. The command palette also offers New Terminal,
 Switch Session, Next Session, and Previous Session. Click **Kill** to close only
 the current session and switch to another; closing the last one hides the panel.

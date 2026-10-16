@@ -147,6 +147,10 @@ func TestToolbarClicksSaveUndoRedoFindAndSplit(t *testing.T) {
 	a, _ := testApp(t)
 	old := a.view().Doc
 	clickCommand(t, a, "file.new")
+	if a.modal == nil || a.view().Doc != old {
+		t.Fatal("New should prompt for an optional filename before creating a document")
+	}
+	a.modalAccept() // Empty input creates an untitled file.
 	if a.view().Doc == old {
 		t.Fatal("New button")
 	}

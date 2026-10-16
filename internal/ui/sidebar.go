@@ -196,9 +196,13 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 		}
 		if fresh {
 			a.focus = "tree"
+			if y == a.sideRect.Y+1 {
+				a.selectTree(-1)
+				return
+			}
 			idx := a.treeTop + y - a.sideRect.Y - 3
 			if idx >= 0 && idx < len(a.tree) {
-				a.treeSelected = idx
+				a.selectTree(idx)
 				entry := a.tree[idx]
 				if entry.Dir {
 					a.toggleTree()

@@ -11,6 +11,10 @@ func (a *App) buttonEnabled(id string) bool {
 		return false
 	}
 	switch id {
+	case "explorer.delete":
+		return a.treeSelected >= 0 && a.treeSelected < len(a.tree) && !a.tree[a.treeSelected].Dir
+	case "file.delete":
+		return a.view().Doc.Path != ""
 	case "edit.undo":
 		return a.view().Doc.Buffer.CanUndo()
 	case "edit.redo":

@@ -70,6 +70,7 @@ func (a *App) toggleTree() {
 		return
 	}
 	e := a.tree[a.treeSelected]
+	a.selectTree(a.treeSelected)
 	if e.Dir {
 		a.expanded[e.Path] = !a.expanded[e.Path]
 		a.scanTree()

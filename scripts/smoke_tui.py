@@ -102,16 +102,14 @@ def main():
             wait_for(lambda: b"SECOND_unset" in received, "new terminal has independent environment")
             received.clear()
             click(69, 18)  # Session selector.
-            wait_for(lambda: b"Switch Terminal" in received, "terminal session picker")
-            paste("Terminal 1")
-            os.write(master, b"\r")
+            wait_for(lambda: "✓".encode() in received, "terminal dropdown beneath its button")
+            click(69, 20)  # First session, directly below the selector.
             paste("printf 'FIRST_%s\\n' \"$SUNBOOK_KEEP\"\n")
             wait_for(lambda: b"FIRST_retained" in received, "switching restores original shell")
             received.clear()
             click(69, 18)
-            wait_for(lambda: b"Switch Terminal" in received, "switch back to second terminal")
-            paste("Terminal 2")
-            os.write(master, b"\r")
+            wait_for(lambda: "✓".encode() in received, "terminal dropdown reopens")
+            click(69, 21)  # Second session.
             click(104, 18)  # Kill only the second shell, automatically restoring the first.
             paste("printf 'SURVIVING_%s\\n' \"$SUNBOOK_KEEP\"\n")
             wait_for(lambda: b"SURVIVING_retained" in received, "Kill preserves other terminal sessions")
@@ -256,15 +254,29 @@ def main():
             if json.loads(config.read_text())["shell"] != "/bin/sh":
                 raise AssertionError("theme selection overwrote shell configuration")
 
-            # Use the top New button and save a new buffer through Save As.
+            # New uses one optional filename input; blank creates an untitled draft.
             click(13, 1)
+            paste("created-from-new.txt")
+            os.write(master, b"\r")
+            named_path = nested.parent / "created-from-new.txt"
+            wait_for(lambda: named_path.exists() and named_path.read_text() == "",
+                     "New creates a file in the previously selected Explorer directory")
+            os.write(master, b"\x1bOP")
+            os.write(master, b"File: Delete Current File\r\r")
+            wait_for(lambda: not named_path.exists(), "Delete confirms and removes the current file")
+            if nested.read_text() != "nested sample":
+                raise AssertionError("Delete affected a neighboring file")
+            click(3, 3)  # Search was active; switch to Explorer.
+            click(9, 3)  # Workspace heading resets the creation directory.
+            click(13, 1)
+            os.write(master, b"\r")  # Empty filename creates an untitled file.
             draft = "toolbar draft\n" + "".join(f"scroll {i}\n" for i in range(80))
             paste(draft)
             received.clear()
             os.write(master, b"\x13")
             wait_for(lambda: b"Save As" in received, "toolbar New and Save As")
             toolbar_path = Path(workspace) / "toolbar.txt"
-            paste(str(toolbar_path))
+            paste("toolbar.txt")
             os.write(master, b"\r")
             wait_for(lambda: toolbar_path.exists() and toolbar_path.read_text() == draft,
                      "toolbar-created file saves")
