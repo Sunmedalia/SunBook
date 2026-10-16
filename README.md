@@ -1,312 +1,171 @@
 # SunBook
 
-A Go terminal editor with VS Code style interaction, mouse selection, split views,
-multiple cursors, language servers, Git, and an integrated shell. English UI;
-macOS and Linux. 中文、Emoji 与组合字符按字素编辑，支持鼠标和键盘操作。
+[![CI](https://github.com/Sunmedalia/SunBook/actions/workflows/ci.yml/badge.svg)](https://github.com/Sunmedalia/SunBook/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Sunmedalia/SunBook)](https://github.com/Sunmedalia/SunBook/releases/latest)
+![Go](https://img.shields.io/badge/Go-1.26.2%2B-00ADD8?logo=go&logoColor=white)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey)
 
-```sh
-go build -o sunbook ./cmd/sunbook
-./sunbook .                 # workspace
-./sunbook path/to/file.go    # file, with its parent as the workspace
-./sunbook --doctor          # external dependency report; no TUI required
-```
+用 Go 编写的终端文本编辑器。在终端里使用熟悉的活动栏、文件标签、分屏、Git 对比和内置终端，同时支持鼠标与键盘操作。
 
-Requires Go 1.26.2 or newer to build. Optional: `go install ./cmd/sunbook` to put
-the binary in your Go bin directory. No external tools are required for basic
-editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
+界面使用英文，支持中文、Emoji 和组合字符编辑。基础编辑无需安装语言服务器。
 
-## Editor
+![SunBook 工作区：Explorer、文件标签和代码高亮](docs/images/workbench.png)
 
-- VS Code style activity bar with compact folder, magnifier, and branch icons
-  for Explorer, Search, and Source Control. Icons highlight on hover and
-  selection; hover shows the panel name and shortcut. The default icons use
-  Nerd Font glyphs; choose a Nerd Font in your terminal (such as Maple Mono NF),
-  or set `"activityIcons": "unicode"` for ordinary character icons. This setting
-  applies to toolbar and panel action icons too.
-  Each opens a persistent left sidebar; clicking the active activity hides it.
-  Ctrl+B hides/restores the sidebar while the activity bar stays visible.
-  Drag file tabs to reorder them, or drop a tab on an editor's left/right edge
-  to open it in a split. Existing groups accept dropped tabs; drafts and cursor
-  positions are preserved. A marker previews the drop; Esc cancels a drag.
-  Panel borders can be dragged to resize them.
-- Clickable top toolbar: New, Open, Save, Find, Undo/Redo, Split, Terminal,
-  More (command palette), and **Help** at the top right. Help opens a scrollable
-  shortcut reference showing current keybindings and controls for each panel;
-  Esc closes it. Actions use the same icon family as the activity bar; wider
-  windows also show names for New, Open, Save, Find, Terminal, and Help.
-  Undo, redo, split, refresh, and menu controls use compact icons. Hover shows
-  the operation and shortcut. Narrow windows use icon buttons for more actions;
-  all actions remain available under More/F1. Raised button faces show hover,
-  press, active, and disabled states; hover shows an action hint.
-- Explorer, Search, and Source Control share inset headers, count badges,
-  section bands, and clear selections. Explorer adds tree guides; long lists
-  have scroll indicators. Git status and log refresh silently.
-- A slate blue workbench with warm gold accents, inset input fields, framed
-  dialogs, and a compact status bar. Long file tabs keep their close button
-  visible. The configured background, foreground, and accent also shape the
-  surrounding surfaces and selection colors.
-- Explorer has an inline filename/path filter, including files in collapsed
-  directories. Click the field, or press `/` / Ctrl+F
-  while the Explorer is focused. Matching is case-insensitive and fuzzy.
-  Down selects results, Enter opens a file, and Esc or `x` clears the filter.
-  The selected file keeps its highlight and left marker after focus moves to
-  the editor. Open / Quick Open also keep a distinct marker beside their icons.
-  Normal expanded folders are restored when the filter is cleared. With
-  ripgrep installed, filtering respects ignore rules; the fallback skips
-  `.git`, `node_modules`, and `vendor` and lists up to 20,000 files.
-- File type icons appear in Explorer, Open / Quick Open, editor tabs, Search,
-  and Git file lists. Folders show separate open/closed marks; source files,
-  documents, settings, images, and archives have distinct colors and symbols.
-  Language marks follow filename extensions: `Go`, `Py`, `JS`, `JSX`, `TS`,
-  `TSX`, `C`, `C++`, `C#`, `Jav`, `Kt`, `Sw`, `Rb`, `PHP`, `Lua`, and more.
-  Vue / Svelte, HTML / XML, CSS / Sass / Less, and JSON / YAML / TOML also
-  have separate marks. Matching is case-insensitive; TypeScript declarations
-  use `dTS`. Icons use standard characters, without a patched font.
-- Single-click a file in Explorer or a Search result to preview it in an italic
-  tab. Selecting another file reuses that preview tab. Double-click the file or
-  its tab to keep it open; editing, saving, or dragging the tab also keeps it.
-  Enter, Open / Quick Open, and opening in a split keep files open immediately.
-  Existing open files and unsaved changes are preserved when browsing previews.
-- Click, drag, double-click a word, triple-click a line, scroll with the wheel.
-- Alt+click adds a cursor. Ctrl+D selects a word and then its next occurrence.
-- Shared documents in splits; independent selections and scroll positions.
-- Unicode grapheme movement/deletion, automatic indentation and bracket pairing,
-  line comments, line movement, multi-cursor edits, and transactional undo/redo.
-- Syntax highlighting, file search/replace, quick open, and workspace search.
-- Ctrl+P ranks workspace files by filename and fuzzy path matching, with recent
-  files first when the query is empty. The file index is shared with Explorer.
-  Add `:line[:column]` to jump (for example `main.go:20:5`); columns follow the
-  displayed text, including tabs and wide characters. Recent files last for
-  the current session.
-- Ctrl+O opens a file browser with folders first, path completion with Tab,
-  and an **↑ Up** button (or Alt+Up) to go to the parent directory. Click the
-  directory path or press Ctrl+L to edit it, then Enter / **Go** to navigate.
-  Tab returns from the path bar to the filename field; Esc cancels path edits
-  before closing the dialog. Invalid paths keep the current folder visible.
-  Enter or click on a list row opens a file or browses a folder. Relative, absolute, and `~/` paths are supported. A new
-  filename opens an empty buffer that is written only when saved. Ctrl+Enter
-  in either picker opens the file in the other editor group (when the terminal
-  can report that key combination). Errors keep the picker open.
-- UTF-8/BOM and LF/CRLF preservation, atomic saves with original permissions,
-  dirty-file prompts, disk change detection, and reload/overwrite choices.
-- Binary and non-UTF-8 files are rejected with a message. Existing symlinks are
-  resolved when opened so saving does not replace the symlink.
+[下载安装](#安装) · [快速上手](#快速上手) · [快捷键](#常用快捷键) · [主题](#主题) · [详细操作手册（English）](docs/usage.md)
 
-## Keys
+## 功能
 
-| Key | Action |
+| 功能 | 使用方式 |
 | --- | --- |
-| F1 / Ctrl+Shift+P | Command palette (all actions) |
-| Ctrl+P / Ctrl+O | Quick open / browse and open files |
-| Ctrl+N / Ctrl+W | New file / close tab |
-| Ctrl+S / Ctrl+Shift+S | Save / Save As |
-| Ctrl+Z / Ctrl+Y | Undo / redo |
-| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste |
-| Ctrl+A / Ctrl+D | Select all / add next matching selection |
-| Ctrl+Alt+Up/Down | Add cursor above/below |
-| Shift+arrows | Extend selection |
-| Ctrl+Left/Right | Move by word |
-| Alt+Up/Down | Move selected lines |
-| Tab / Shift+Tab | Indent / outdent |
-| Ctrl+/ | Toggle line comments |
-| Ctrl+F / Ctrl+H | Find / replace in file |
-| Ctrl+Shift+F | Search workspace (ripgrep) |
-| Ctrl+G | Go to line[:column] |
-| Ctrl+B / Ctrl+J | Toggle sidebar / panel |
-| Ctrl+Shift+E | Show Explorer sidebar |
-| Ctrl+Shift+G | Show Source Control sidebar |
-| Ctrl+\ | Toggle split editor |
-| Ctrl+K, Ctrl+O | Focus the other editor |
-| Ctrl+Tab / Ctrl+Shift+Tab | Next / previous file tab |
-| F4 | Open shell / switch focus between shell and editor |
-| F6 | Cycle editor, active sidebar, and bottom panel focus |
-| Ctrl+Space | Completion |
-| F12 / Shift+F12 | Definition / references |
-| F2 / Alt+H / Alt+Shift+F | Rename symbol / hover / format |
-| Esc | Dismiss popup or reduce to one cursor |
-| Ctrl+Q | Quit (prompts for unsaved changes) |
+| 文件浏览 | Explorer 支持目录展开、文件名/路径过滤和语言图标；单击预览，双击固定标签 |
+| 编辑与分屏 | 多标签、标签拖动排序、拖到编辑区边缘分屏；支持多光标、撤销/重做和鼠标选区 |
+| 搜索与打开 | `Ctrl+P` 模糊查找文件，支持 `file:line:column`；`Ctrl+O` 浏览目录并编辑路径 |
+| 工作区搜索 | ripgrep 搜索、匹配高亮、文件分组，以及大小写、整词、正则和路径过滤 |
+| Git | 暂存/取消暂存、提交、静默刷新、可调整高度的 Git Log；左右代码对比保留语法高亮与增删底色 |
+| 内置终端 | 真实 PTY、滚动历史；可在底部和右侧之间切换，隐藏后保留 Shell 会话 |
+| 语言服务 | Go、Python、JS/TS 的补全、定义、引用、悬浮信息、重命名、格式化和诊断 |
+| 主题 | 6 套深浅主题，可在界面中切换并自动记住选择 |
+| 文件保存 | 保留 UTF-8 BOM、LF/CRLF 和文件权限；原子保存、未保存提醒与磁盘冲突检测 |
 
-In the shell, ordinary keys including Ctrl+C go to the child process. F1, F4,
-and F6 remain editor focus controls; sidebar shortcuts also work with shell
-focus. Ctrl+J toggles the bottom panel even with shell
-focus. Click **Hide** in the panel header to hide it and keep the shell running.
-Click **Right** in the panel header to dock it on the right, and **Bottom** to
-return it below the editor. Drag the divider to resize its width or height.
-The panel uses an X icon to hide and a trash icon to end the shell; hover
-shows the action before clicking. Position, size, output, and the shell session
-survive switching and hiding.
-Narrow windows temporarily use the bottom layout and restore the right dock
-when there is enough room. The command palette also includes **View: Toggle
-Panel Position (Bottom / Right)**.
-Click **Kill** to end the shell session and close its panel. F4 switches focus
-between the visible shell and the editor, and opens a hidden terminal again.
-Opening a terminal tab is lazy: it does not execute
-a shell on editor startup. After the shell exits, F4 starts a fresh session.
+## 安装
 
-Traditional terminals cannot distinguish some combinations (for example,
-Ctrl+H and Backspace, or Ctrl+Space and NUL), and may reserve Cmd/Alt shortcuts.
-Modern keyboard protocols improve this; F1 and configurable bindings provide
-alternatives. If Alt+click is intercepted by the terminal, use Ctrl+Alt+Down or
-the command palette to add cursors. Use the terminal's selection modifier
-(often Shift) to select terminal text instead of editor text. The input method
-and candidate window belong to the host terminal.
+### 下载 Release
 
-Clipboard uses `pbcopy`/`pbpaste` on macOS, `wl-copy`/`wl-paste` on Wayland, or
-`xclip` under X11. An internal clipboard remains available when these fail.
-Modal text fields support Ctrl+V and Ctrl+U to clear the field.
+在 [Releases](https://github.com/Sunmedalia/SunBook/releases/latest) 下载对应平台的压缩包，**无需安装 Go**。
 
-## Language services
+| 平台 | v0.1.0 安装包 |
+| --- | --- |
+| macOS · Apple Silicon | `sunbook_0.1.0_darwin_arm64.tar.gz` |
+| macOS · Intel | `sunbook_0.1.0_darwin_amd64.tar.gz` |
+| Linux · x86-64 | `sunbook_0.1.0_linux_amd64.tar.gz` |
+| Linux · ARM64 | `sunbook_0.1.0_linux_arm64.tar.gz` |
 
-Install the tools you want; SunBook never downloads or installs them.
+例如在 Apple Silicon Mac 上安装：
 
 ```sh
-go install golang.org/x/tools/gopls@latest
-npm install -g pyright typescript-language-server typescript@6
-# Python formatting; use your preferred Python package manager:
-pipx install ruff
-# Workspace text search:
-brew install ripgrep         # macOS
-# sudo apt install ripgrep   # Debian/Ubuntu
+curl -fLO https://github.com/Sunmedalia/SunBook/releases/download/v0.1.0/sunbook_0.1.0_darwin_arm64.tar.gz
+curl -fLO https://github.com/Sunmedalia/SunBook/releases/download/v0.1.0/SHA256SUMS
+shasum -a 256 --check --ignore-missing SHA256SUMS
+
+tar -xzf sunbook_0.1.0_darwin_arm64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 755 sunbook_0.1.0_darwin_arm64/sunbook "$HOME/.local/bin/sunbook"
+"$HOME/.local/bin/sunbook" --version
 ```
 
-The current gopls release may require a newer Go toolchain than SunBook itself;
-Go's toolchain selection handles that, or install a gopls version compatible
-with your toolchain. TypeScript 6 supplies `tsserver.js`; TypeScript 7 packages
-without that file are not compatible with this TypeScript server setup.
+将 `~/.local/bin` 加入 `PATH` 后即可直接运行 `sunbook`。Linux 校验压缩包可使用 `sha256sum --check --ignore-missing SHA256SUMS`。
 
-Go uses gopls. Python uses Pyright for intelligence and Ruff for formatting.
-JS/JSX and TS/TSX use typescript-language-server with TypeScript. Available
-features: completion (including import edits), hover, diagnostics, definition,
-references, rename preview, and formatting. A rename updates editor buffers;
-use **File: Save All** to write them. Each modified document has its own undo
-history. Resource operations and server-initiated edits are not supported.
+### 从源码构建
 
-Servers start when a matching file is opened. Missing or failed servers leave
-editing available. Run `sunbook --doctor`, then **Language: Restart Language
-Servers** after fixing the installation. A project with a proper `go.mod`,
-Python environment, or `tsconfig.json` gives better results than loose files.
+需要 **Go 1.26.2 或更新版本**：
 
-## Git and terminal
+```sh
+git clone https://github.com/Sunmedalia/SunBook.git
+cd SunBook
+make build
+./sunbook .
+```
 
-Click the branch icon, use Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
-sidebar. Staged files, tracked changes, untracked files, and conflicts have
-separate counted groups and colored status badges. A file with both staged and
-unstaged edits appears in each group. Filenames stay readable in narrow sidebars;
-hover shows the full path. Branch arrows show ahead/behind counts from local refs.
+也可以在仓库中执行 `go install ./cmd/sunbook`，安装到 Go bin 目录。
 
-Click a row or press `d`/Enter to open an editor comparison tab. Staged changes
-compare HEAD with Index; unstaged changes compare Index with the saved worktree.
-Added and removed rows are aligned and colored, with line numbers and synchronized
-vertical scrolling. Both snapshots use the editor's language syntax highlighting
-while keeping red/green change backgrounds, including multiline comments and
-strings. Click either pane to focus it; Tab switches sides, Left/Right
-pan, `n`/`p` jump between changes, and the divider can be dragged. The comparison
-is read-only: `o` opens the working file for editing; Ctrl+W / the tab's close
-button restores the original editor. Open buffers and unsaved edits are preserved.
-`D` shows the selected file's staged comparison. Binary files show byte counts.
+## 快速上手
 
-Git log is shown at the bottom of the sidebar with commit hashes, subjects,
-authors, and relative times. Its wheel scroll is independent of the change list.
-`h`, **Log**, or Tab from the change list focuses it; arrows select and Enter or
-click views a commit patch. Drag the log header divider up/down to resize the
-log and change list; the size is remembered while switching sidebars. The header
-arrow expands the log and restores the chosen size. **More →
-Selected file history** restricts the log to that file (following renames);
-**Log** returns to repository history. Background refresh keeps the selected
-commit and scroll position without progress messages or flickering buttons.
+```sh
+sunbook .                    # 打开当前工作区
+sunbook path/to/main.go       # 打开文件，以其父目录作为工作区
+sunbook --doctor             # 检查可选依赖和配置路径
+sunbook --config config.json .
+```
 
-`s` stages a file; `u` unstages it; `o` opens it. Group-header `+` stages the
-entire group; `−` unstages all staged files. **More** also provides repository-wide
-stage/unstage and repository details. `S` / `U` stage / unstage all changes.
+使用支持 UTF-8、真彩色和鼠标事件的终端。默认按钮图标使用 Nerd Font，请在终端选择例如 **Maple Mono NF** 的字体；普通字体可在配置中设置 `"activityIcons": "unicode"`。
 
-Press `c` or click the message field to write a commit message, then Enter or
-**Commit** to commit staged files only. Drafts survive sidebar switches and failed
-commits; successful commits clear the submitted draft. Conflicts block commits
-until resolved and staged. Git operates on saved files on disk. `/` or Ctrl+F
-filters changed paths; Esc in the filter clears it. Small terminals provide the
-filter in a prompt. Filtering does not change the scope of commits or group/batch
-actions. F5 refreshes status. Errors and hook failures appear in the status
-message, with a persistent error summary in the sidebar. Commit messages and
-paths are passed directly to Git, never interpolated into shell commands.
-Configure Git name/email and signing separately as usual. There is no push,
-branch management, or discard-changes command in this release.
+- **找文件**：点击 Explorer，或按 `Ctrl+P` 搜索路径。单击文件使用斜体预览标签，双击文件或标签将其固定；编辑、保存、拖动时也会自动固定。
+- **调整布局**：拖动侧边栏和面板边界调整尺寸；拖动标签排序，拖到编辑区左/右边缘分屏。
+- **使用终端**：`F4` 打开或切换焦点；`Ctrl+J` 或 X 按钮隐藏并保留会话；垃圾桶按钮结束 Shell。面板箭头可切换到底部或右侧。
+- **查看帮助**：右上角 **Help** 展示当前快捷键；`F1` 打开包含全部操作的命令面板。
 
-Click the magnifier or use Ctrl+Shift+F for the Search sidebar. It searches after a short
-typing pause, or immediately with Enter / Go, using ripgrep regexes and smart
-case. **Aa** forces case-sensitive matching, **W** matches whole words, and
-`.*` switches between regular expressions and literal text. **...** reveals
-include/exclude file globs, separated by commas (for example `src/**, *.go` and
-`vendor/**`). Small windows use prompts for these fields. Results arrive as
-search progresses, grouped into collapsible file sections with counts. Matching
-text is highlighted even far into a long line; hover shows the full path. Click
-a match or select it with arrows and Enter to jump and select its text. Tab
-returns to the search input. At 2,000 matches the list reports its limit; narrow
-the query or paths for more targeted results. Clear resets results; Stop cancels work.
-The query, results, and scroll position remain when switching sidebars.
-Explorer's filter and Git selection also keep their state. Terminal and
-Problems stay in the independent bottom panel.
+## 常用快捷键
 
-The terminal uses a real Unix PTY and a VT emulator, with colors, cursor
-addressing, alternate screen, resize, and 10,000 lines of scrollback. Wheel
-scrolling reads history. It is one session per workspace, using `$SHELL` (or
-`/bin/sh`) in the workspace directory. Mouse events are forwarded when a child
-program enables mouse reporting; Shift+wheel always scrolls terminal history.
-Selection/copy of shell scrollback is left to the host terminal in this release.
+| 快捷键 | 操作 |
+| --- | --- |
+| `F1` / `Ctrl+Shift+P` | 命令面板 |
+| `Ctrl+P` / `Ctrl+O` | 快速打开 / 文件浏览器 |
+| `Ctrl+N` / `Ctrl+W` | 新文件 / 关闭标签 |
+| `Ctrl+S` / `Ctrl+Shift+S` | 保存 / 另存为 |
+| `Ctrl+Z` / `Ctrl+Y` | 撤销 / 重做 |
+| `Ctrl+F` / `Ctrl+H` | 文件内查找 / 替换 |
+| `Ctrl+Shift+E` / `Ctrl+Shift+F` / `Ctrl+Shift+G` | Explorer / Search / Git |
+| `Ctrl+B` / `Ctrl+J` | 显示或隐藏侧边栏 / 面板 |
+| `Ctrl+\` | 切换编辑器分屏 |
+| `Ctrl+K`，再 `Ctrl+O` | 聚焦另一编辑器 |
+| `Ctrl+K`，再 `Ctrl+T` | 选择主题（编辑器内） |
+| `Ctrl+D` / `Alt+单击` | 选择下一个匹配 / 添加光标 |
+| `F4` / `F6` | 终端焦点 / 循环切换区域焦点 |
+| `F12` / `Shift+F12` | 定义 / 引用 |
+| `Alt+Shift+F` | 格式化文档 |
+| `Ctrl+Q` | 退出，并检查未保存文件 |
 
-## Configuration
+终端可能截获部分组合键，可使用 `F1` 查找对应命令。Shell 聚焦时，`Ctrl+C` 等按键发送给子进程；`F1`、`F4`、`F6` 和侧边栏快捷键仍由编辑器处理。
 
-Defaults work without a config file. `--doctor` prints the default path:
+## 主题
 
-- macOS: `~/Library/Application Support/SunBook/config.json`
-- Linux: `$XDG_CONFIG_HOME/SunBook/config.json` or `~/.config/SunBook/config.json`
+提供 **SunBook、Tokyo Night、Dracula、Nord、Gruvbox Dark、GitHub Light**。
 
-See [config.example.json](config.example.json), or pass `--config path.json`
-before the positional path. Configuration merges with defaults. The `servers`
-keys are `go`, `python`, and `typescript`. Keybindings map lowercase key names
-to command IDs; set an ID to `""` to disable a binding. The modifier order is
-`ctrl+alt+shift+key`; chords use a space, such as `ctrl+k ctrl+o`.
+通过 **F1 → Preferences: Color Theme…** 选择；支持名称过滤和配色预览。界面、代码高亮和 Git 对比同步切换，选择保存到当前配置文件。
 
-Optional fields:
+![六套主题的界面预览](docs/images/themes.png)
+
+## Git 对比
+
+点击 Git 侧边栏中的文件，查看只读双栏对比：暂存修改比较 **HEAD → Index**，未暂存修改比较 **Index → Worktree**。两个版本分别进行语法高亮，并保留红绿增删底色。
+
+![浅色主题下的 Git 对比与代码高亮](docs/images/git-comparison.png)
+
+在变更列表使用 `s` / `u` 暂存或取消暂存，`c` 输入提交信息；Git Log 支持滚动、查看提交和拖动边界调整高度。在对比视图按 `o` 打开工作文件，`n` / `p` 跳转变更，`Ctrl+W` 关闭对比。
+
+Git 操作针对磁盘上已保存的文件；应用内暂不提供 push、分支管理或丢弃修改功能。
+
+## 配置与可选依赖
+
+运行 `sunbook --doctor` 查看配置路径：macOS 默认位于 `~/Library/Application Support/SunBook/config.json`；Linux 默认位于 `$XDG_CONFIG_HOME/SunBook/config.json`，未设置时使用 `~/.config/SunBook/config.json`。
+
+配置按字段与默认值合并，可参考 [config.example.json](config.example.json)：
 
 ```json
 {
-  "shell": "/bin/zsh",
-  "pythonPath": "/path/to/project/.venv/bin/python",
-  "servers": {
-    "typescript": {
-      "initializationOptions": {
-        "tsserver": { "path": "/path/to/typescript/lib/tsserver.js" }
-      }
-    },
-    "python": { "settings": { "python": { "analysis": { "typeCheckingMode": "basic" } } } }
-  }
+  "theme": { "name": "nord" },
+  "activityIcons": "nerd",
+  "tabSize": 4,
+  "insertSpaces": true,
+  "keybindings": { "f8": "language.format" }
 }
 ```
 
-File search uses fuzzy filename matching. File find/replace uses literal,
-case-sensitive text; workspace search uses ripgrep regular expressions and
-smart case, respects ignore rules, and displays up to 2,000 results. Syntax
-highlighting is disabled above 2 MiB; basic editing remains available. The
-editor is intended for ordinary source files; it is not a large-file viewer.
+主题名称为 `sunbook`、`tokyo-night`、`dracula`、`nord`、`gruvbox-dark`、`github-light`；可覆盖 `background`、`foreground`、`accent`、`syntax`。在界面选择主题会替换主题覆盖项，保留其他配置。快捷键设为空字符串可禁用；组合顺序为 `ctrl+alt+shift+key`，多段快捷键用空格分隔。
 
-## Development and verification
+| 可选工具 | 用途 |
+| --- | --- |
+| `git` | Source Control、Git Log 和版本对比 |
+| `rg`（ripgrep） | 工作区全文搜索与遵循忽略规则的文件索引 |
+| `gopls` | Go 语言服务 |
+| `pyright-langserver` | Python 语言服务 |
+| `typescript-language-server`、TypeScript | JS/TS 语言服务 |
+| `ruff` | Python 格式化 |
+| `pbcopy` / `pbpaste`、`wl-copy` / `wl-paste` 或 `xclip` | macOS / Wayland / X11 系统剪贴板 |
+
+安装命令、LSP 设置、完整快捷键与各面板说明见 [详细操作手册](docs/usage.md)。工具缺失时基础编辑仍然可用，内置终端默认使用 `$SHELL` 或 `/bin/sh`。
+
+## 开发、CI 与发布
 
 ```sh
-make check                  # tests with race detection, then vet
-make smoke                  # real PTY UI test; requires git and ripgrep
-SUNBOOK_LSP_INTEGRATION=1 go test ./internal/lsp -run TestRealServers -v
-go test ./internal/text -run '^$' -bench . -benchmem
+make build                  # 构建本机程序
+make check                  # 竞态测试和 go vet
+make smoke                  # 真实 PTY 冒烟测试，需要 git、ripgrep 和 Python 3
+python3 scripts/package_release.py --version 0.1.0 --os darwin --arch arm64
 ```
 
-The optional LSP suite requires all three servers in PATH; normal tests use
-a local protocol fixture. Core tests cover randomized piece-table operations,
-Unicode and UTF-16 positions, undo/redo, disk conflicts, encoding/permission
-preservation, mouse hit testing, split synchronization, modal save decisions,
-Git operations in temporary repositories, and shell ANSI/resize/interrupt.
-CI runs race tests, vet, and the PTY smoke test on macOS and Linux.
+[CI](https://github.com/Sunmedalia/SunBook/actions/workflows/ci.yml) 在 macOS 和 Linux 上检查格式、依赖、竞态、vet 与真实终端交互。推送 `vX.Y.Z` 标签会运行同样的检查，再打包四个平台、生成 `SHA256SUMS` 并发布 [Release](https://github.com/Sunmedalia/SunBook/releases)。发布说明放在 `docs/releases/<tag>.md`；没有对应文件时自动生成。
 
-Code is divided into `text` (piece table/history), `editor` (documents/views),
-`ui` (event loop/rendering/commands), `lsp`, `git`, `terminal`, `clipboard`, and
-`config`. The UI event loop owns mutable editor state. Workers post immutable,
-version-checked results. The first release does not provide DAP debugging,
-extensions, remote development, Vim modes, or VS Code configuration imports.
+发布记录见 [CHANGELOG.md](CHANGELOG.md)。项目结构与可选集成测试见 [详细操作手册](docs/usage.md#development-and-verification)。
+
+基础编辑支持 macOS/Linux；暂不支持 Windows、DAP 调试、扩展插件、远程开发和 Vim 模式。二进制及非 UTF-8 文件会拒绝打开，超过 2 MiB 的内容关闭语法高亮。

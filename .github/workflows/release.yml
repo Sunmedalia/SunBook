@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [darwin, linux]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build release archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/package_release.py --version "$RELEASE_TAG" --os ${{ matrix.os }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sunbook-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [checks, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sunbook-*
+          path: dist
+          merge-multiple: true
+      - name: Check archives and generate SHA-256 checksums
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          archives = sorted(Path('dist').glob('*.tar.gz'))
+          if len(archives) != 4:
+              raise SystemExit(f'Expected 4 release archives, found {len(archives)}')
+          Path('dist/SHA256SUMS').write_text(''.join(
+              f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in archives
+          ), encoding='utf-8')
+          PY
+          cd dist
+          sha256sum --check SHA256SUMS
+      - name: Create release with all assets, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          notes="docs/releases/${RELEASE_TAG}.md"
+          if [ -f "$notes" ]; then
+            args=(--notes-file "$notes")
+          else
+            args=(--generate-notes)
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --draft \
+            --title "SunBook $RELEASE_TAG" "${args[@]}" dist/*.tar.gz dist/SHA256SUMS
+          gh release edit "$RELEASE_TAG" --draft=false --latest
