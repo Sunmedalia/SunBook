@@ -605,11 +605,8 @@ func (a *App) mouse(e *tcell.EventMouse) {
 				m.Top = max(0, min(m.Top+wheel, max(0, len(m.Body)-1)))
 			}
 		}
-		if fresh && a.modalRect.contains(x, y) {
+		if fresh && x > a.modalRect.X && x < a.modalRect.X+a.modalRect.W-1 && y >= m.ListY && y < m.ListY+m.ListH {
 			idx := y - m.ListY + m.Top
-			if y < m.ListY {
-				return
-			}
 			if idx >= 0 && idx < len(m.Visible) {
 				m.Selected = idx
 				a.modalAccept()
@@ -625,7 +622,11 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			a.hoverHint = b.Hint
 			if fresh {
 				a.drag = ""
-				a.execute(b.Command)
+				if !b.Disabled && a.buttonEnabled(b.Command) {
+					a.pressedCommand = b.Command
+					a.pressedUntil = time.Now().Add(150 * time.Millisecond)
+					a.execute(b.Command)
+				}
 				return
 			}
 			break

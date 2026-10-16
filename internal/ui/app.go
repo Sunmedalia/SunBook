@@ -35,21 +35,22 @@ type treeEntry struct {
 type button struct {
 	rect
 	Command, Hint string
+	Disabled      bool
 }
 type item struct {
 	Label, Detail string
 	Action        func()
 }
 type modal struct {
-	Title, Input, Hint   string
-	Cursor               int
-	Items, Visible       []item
-	Selected, Top        int
-	InputEnabled, Filter bool
-	Body                 []string
-	BodyTop, ListY       int
-	Submit               func(string, int)
-	Changed              func(string)
+	Title, Input, Hint    string
+	Cursor                int
+	Items, Visible        []item
+	Selected, Top         int
+	InputEnabled, Filter  bool
+	Body                  []string
+	BodyTop, ListY, ListH int
+	Submit                func(string, int)
+	Changed               func(string)
 }
 type command struct {
 	ID, Label, Key string
@@ -149,12 +150,15 @@ type App struct {
 	modalRect                             rect
 	buttons                               []button
 	hoverCommand, hoverHint               string
+	pressedCommand                        string
+	pressedUntil                          time.Time
 	drag                                  string
 	dragGroup                             int
 	lastButtons                           tcell.ButtonMask
 	clickTime                             time.Time
 	clickX, clickY, clickCount            int
 	base, muted, accent, chrome, selected tcell.Style
+	colors                                palette
 }
 
 func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
@@ -186,11 +190,8 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 	a.highlightDue = map[*editor.Document]time.Time{}
 	a.sidebarView = "Explorer"
 	a.highlightRunning = map[*editor.Document]bool{}
-	a.base = tcell.StyleDefault.Background(tcell.GetColor(cfg.Theme.Background)).Foreground(tcell.GetColor(cfg.Theme.Foreground))
-	a.muted = a.base.Foreground(tcell.GetColor("#68788f"))
-	a.accent = a.base.Foreground(tcell.GetColor(cfg.Theme.Accent))
-	a.chrome = a.base.Background(tcell.GetColor("#202633"))
-	a.selected = a.base.Background(tcell.GetColor("#314767"))
+	a.initTheme()
+	a.screen.SetStyle(a.base)
 	a.registerCommands()
 	if file != "" {
 		if e = a.open(file); e != nil {
@@ -217,7 +218,6 @@ func (a *App) showError(err error) {
 }
 func (a *App) Run() error {
 	defer a.Close()
-	a.screen.SetStyle(a.base)
 	a.screen.EnableMouse(tcell.MouseMotionEvents, tcell.MouseButtonEvents, tcell.MouseDragEvents)
 	a.screen.EnablePaste()
 	a.screen.EnableFocus()
@@ -787,5 +787,15 @@ func (a *App) status() string {
 	if err := a.serverErrors[key]; err != "" {
 		mode += " · LSP unavailable"
 	}
-	return fmt.Sprintf("Ln %d, Col %d  ·  %d cursor(s)  ·  %s  ·  %s", r+1, text.Column(v.Doc.Buffer.Line(r), c, a.cfg.TabSize)+1, len(v.Selections), eol, mode)
+	position := positionLabel(r, text.Column(v.Doc.Buffer.Line(r), c, a.cfg.TabSize))
+	if len(v.Selections) > 1 {
+		position += fmt.Sprintf(" · %d cursors", len(v.Selections))
+	}
+	_, language := config.Language(v.Doc.Path)
+	if language == "" {
+		language = "Plain text"
+	}
+	return fmt.Sprintf("%s   %s · %s   %s", position, mode, eol, language)
 }
+
+func positionLabel(row, col int) string { return fmt.Sprintf("Ln %d, Col %d", row+1, col+1) }

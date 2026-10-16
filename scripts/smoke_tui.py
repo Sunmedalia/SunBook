@@ -69,7 +69,7 @@ def main():
             # F4 focuses the shell. Ctrl+J and Hide must preserve its session.
             received.clear()
             os.write(master, b"\x1bOS")
-            wait_for(lambda: b"[Hide]" in received, "terminal controls")
+            wait_for(lambda: b"Hide" in received, "terminal controls")
             paste("SUNBOOK_KEEP=retained; printf 'SHELL_%s\\n' READY\n")
             wait_for(lambda: b"SHELL_READY" in received, "shell command")
             received.clear()

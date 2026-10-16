@@ -2,9 +2,9 @@
   "tabSize": 4,
   "insertSpaces": true,
   "theme": {
-    "background": "#171b24",
-    "foreground": "#c9d1df",
-    "accent": "#78a9ff"
+    "background": "#161e2b",
+    "foreground": "#d4deea",
+    "accent": "#e2b66f"
   },
   "keybindings": {
     "ctrl+s": "file.save",

@@ -17,17 +17,22 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 
 ## Editor
 
-- VS Code style activity bar: `[E]` Explorer, `[S]` Search, `[G]` Source Control.
+- VS Code style activity bar: `E` Explorer, `S` Search, `G` Source Control.
   Each opens a persistent left sidebar; clicking the active activity hides it.
   Ctrl+B hides/restores the sidebar while the activity bar stays visible.
   File tabs, draggable panel borders, and two side-by-side editors.
 - Clickable top toolbar: New, Open, Save, Find, Undo/Redo, Split, Terminal,
   and More (command palette). Narrow windows keep the actions that fit;
-  all actions remain available under More/F1. Hover shows an action hint.
+  all actions remain available under More/F1. Raised button faces show hover,
+  press, active, and disabled states; hover shows an action hint.
+- A slate blue workbench with warm gold accents, inset input fields, framed
+  dialogs, and a compact status bar. Long file tabs keep their close button
+  visible. The configured background, foreground, and accent also shape the
+  surrounding surfaces and selection colors.
 - Explorer has an inline filename/path filter, including files in collapsed
   directories. Click the field, or press `/` / Ctrl+F
   while the Explorer is focused. Matching is case-insensitive and fuzzy.
-  Down selects results, Enter opens a file, and Esc or `[x]` clears the filter.
+  Down selects results, Enter opens a file, and Esc or `x` clears the filter.
   Normal expanded folders are restored when the filter is cleared. With
   ripgrep installed, filtering respects ignore rules; the fallback skips
   `.git`, `node_modules`, and `vendor` and lists up to 20,000 files.
@@ -130,7 +135,7 @@ Python environment, or `tsconfig.json` gives better results than loose files.
 
 ## Git and terminal
 
-Use `[G]`, Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
+Use `G`, Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
 sidebar. Staged Changes and Changes are separate groups; a file with both
 staged and unstaged edits appears in each. Click a row or press `d`/Enter for
 that version's diff; `D` always shows the staged diff. `s` stages a file;
@@ -140,7 +145,7 @@ and paths are passed directly to Git, never interpolated into shell commands.
 Configure Git name/email and signing separately as usual. There is no push,
 branch management, or discard-changes command in this release.
 
-Use `[S]` or Ctrl+Shift+F for the Search sidebar. It searches after a short
+Use `S` or Ctrl+Shift+F for the Search sidebar. It searches after a short
 typing pause, or immediately with Enter / Go, using ripgrep regexes and smart
 case. Results are grouped by file; click a match or select it with arrows and
 Enter to jump to its line and column. Clear resets results; Stop cancels work.

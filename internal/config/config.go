@@ -34,7 +34,7 @@ func Default() Config {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	return Config{TabSize: 4, InsertSpaces: true, Shell: sh, Theme: Theme{"#171b24", "#c9d1df", "#78a9ff"}, Keybindings: map[string]string{}, Servers: map[string]Server{
+	return Config{TabSize: 4, InsertSpaces: true, Shell: sh, Theme: Theme{"#161e2b", "#d4deea", "#e2b66f"}, Keybindings: map[string]string{}, Servers: map[string]Server{
 		"go": {Command: "gopls"}, "python": {Command: "pyright-langserver", Args: []string{"--stdio"}}, "typescript": {Command: "typescript-language-server", Args: []string{"--stdio"}},
 	}}
 }

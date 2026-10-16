@@ -195,6 +195,8 @@ func (b *Buffer) Apply(edits []Edit, before, after []Selection) bool {
 	return true
 }
 func boundary(s string, p int) bool { return p == len(s) || utf8.RuneStart(s[p]) }
+func (b *Buffer) CanUndo() bool     { return b.index > 0 }
+func (b *Buffer) CanRedo() bool     { return b.index < len(b.history) }
 func (b *Buffer) Undo() ([]Selection, bool) {
 	if b.index == 0 {
 		return nil, false

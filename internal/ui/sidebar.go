@@ -65,13 +65,17 @@ func (a *App) drawActivityBar() {
 	if r.W == 0 {
 		return
 	}
-	a.fill(r, a.base)
+	a.fill(r, a.base.Background(a.colors.inset))
 	for i, v := range []struct{ label, view, id, hint string }{{"E", "Explorer", "activity.explorer", "Explorer (Ctrl+Shift+E)"}, {"S", "Search", "activity.search", "Search workspace (Ctrl+Shift+F)"}, {"G", "Git", "activity.git", "Source Control (Ctrl+Shift+G)"}} {
 		y := r.Y + 1 + i*3
 		if y >= r.Y+r.H {
 			break
 		}
-		a.drawButton(r.X+1, y, v.label, v.id, v.hint, a.sidebar && a.sidebarView == v.view)
+		active := a.sidebar && a.sidebarView == v.view
+		a.drawButton(r.X+1, y, v.label, v.id, v.hint, active)
+		if active {
+			a.put(r.X, y, 1, "▎", a.accent.Background(a.colors.inset))
+		}
 	}
 }
 func (a *App) drawSidebar() {
@@ -86,17 +90,14 @@ func (a *App) drawSidebar() {
 	}
 }
 func (a *App) drawSidebarInput(r rect, value string, cursor int, placeholder, focus string) int {
-	style := a.base
-	if a.focus == focus {
-		style = a.selected
-	}
+	style := a.inputStyle(a.focus == focus)
 	a.fill(r, style)
 	offset := 0
 	if col := text.Width(value[:cursor], a.cfg.TabSize); col >= r.W {
 		offset = text.Offset(value, col-r.W+1, a.cfg.TabSize)
 	}
 	if value == "" && a.focus != focus {
-		a.put(r.X, r.Y, r.W, placeholder, a.muted)
+		a.put(r.X, r.Y, r.W, placeholder, style.Foreground(a.colors.muted))
 	} else {
 		a.put(r.X, r.Y, r.W, value[offset:], style)
 	}
@@ -130,11 +131,12 @@ func (a *App) drawSidebarRows(rows []sidebarRow, start, top, selected int) {
 		row := rows[i]
 		style := a.chrome
 		if row.Heading {
-			style = a.muted.Bold(true)
+			style = a.chrome.Foreground(a.colors.muted).Bold(true)
 		} else {
 			if row.Index == selected {
 				style = a.selected
 				a.fill(rect{r.X, y, r.W, 1}, style)
+				a.put(r.X, y, 1, "▎", style.Foreground(a.accent.GetForeground()))
 			}
 			a.sideHits = append(a.sideHits, sideHit{rect{r.X, y, r.W, 1}, row.Index})
 		}
@@ -205,9 +207,9 @@ func (a *App) openGitFile() {
 }
 func (a *App) drawGitSidebar() {
 	r := a.sideRect
-	a.put(r.X+1, r.Y, r.W-6, "SOURCE CONTROL", a.accent.Bold(true))
+	a.put(r.X+1, r.Y, r.W-6, "SOURCE CONTROL", a.chrome.Foreground(a.colors.muted).Bold(true))
 	a.drawButton(r.X+r.W-4, r.Y, "R", "git.refresh", "Refresh Git status", false)
-	a.put(r.X+1, r.Y+1, r.W-2, "⎇ "+a.git.Branch, a.muted)
+	a.put(r.X+1, r.Y+1, r.W-2, "on "+a.git.Branch, a.chrome.Foreground(a.colors.muted))
 	x := r.X + 1
 	for _, b := range []struct{ label, id string }{{"Stage", "git.stage"}, {"Unstage", "git.unstage"}, {"Diff", "git.selectedDiff"}} {
 		w := len(b.label) + 2
@@ -258,7 +260,7 @@ func (a *App) searchRows() []sidebarRow {
 }
 func (a *App) drawSearchSidebar() {
 	r := a.sideRect
-	a.put(r.X+1, r.Y, r.W-2, "SEARCH", a.accent.Bold(true))
+	a.put(r.X+1, r.Y, r.W-2, "SEARCH", a.chrome.Foreground(a.colors.muted).Bold(true))
 	a.searchInputRect = rect{r.X + 1, r.Y + 1, r.W - 2, 1}
 	a.searchOffset = a.drawSidebarInput(a.searchInputRect, a.searchQuery, a.searchCursor, "Search workspace…", "searchInput")
 	x := r.X + 1

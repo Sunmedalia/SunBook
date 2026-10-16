@@ -1,19 +1,78 @@
 package ui
 
-import "sunbook/internal/text"
+import (
+	"time"
+
+	"sunbook/internal/text"
+)
+
+func (a *App) buttonEnabled(id string) bool {
+	switch id {
+	case "edit.undo":
+		return a.view().Doc.Buffer.CanUndo()
+	case "edit.redo":
+		return a.view().Doc.Buffer.CanRedo()
+	case "search.stop":
+		return a.searchRunning || !a.searchDue.IsZero()
+	case "search.run", "search.clear":
+		return a.searchQuery != ""
+	case "git.stage", "git.unstage", "git.selectedDiff", "git.open":
+		entry, ok := a.selectedGitEntry()
+		if !ok || a.gitBusy {
+			return false
+		}
+		return id != "git.stage" && id != "git.unstage" || (id == "git.unstage") == entry.Staged
+	case "git.commit":
+		if a.gitBusy {
+			return false
+		}
+		for _, entry := range a.gitEntries() {
+			if entry.Staged {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
 
 func (a *App) drawButton(x, y int, label, id, hint string, active bool) int {
-	label = "[" + label + "]"
-	width := text.Width(label, 4)
-	style := a.chrome
+	width := text.Width(label, 4) + 2
+	enabled := a.buttonEnabled(id)
+	style := a.base.Background(a.colors.raised)
+	primary := id == "file.save" || id == "git.commit" || id == "search.run"
+	if primary {
+		style = style.Background(a.accent.GetForeground()).Foreground(a.colors.onAccent).Bold(true)
+	}
 	if active {
-		style = a.selected
+		style = a.selected.Foreground(a.accent.GetForeground()).Bold(true)
 	}
-	if a.hoverCommand == id {
-		style = a.selected.Bold(true)
+	if a.hoverCommand == id && enabled {
+		style = style.Background(a.colors.hover).Bold(true)
+		if primary {
+			style = style.Background(mix(a.accent.GetForeground(), a.base.GetForeground(), 20))
+		}
 	}
-	a.put(x, y, width, label, style)
-	a.buttons = append(a.buttons, button{rect: rect{x, y, width, 1}, Command: id, Hint: hint})
+	pressed := enabled && a.pressedCommand == id && time.Now().Before(a.pressedUntil)
+	if pressed {
+		style = a.selected.Foreground(a.accent.GetForeground()).Bold(true)
+	}
+	if !enabled {
+		style = a.chrome.Foreground(a.colors.disabled)
+		hint += " · unavailable"
+	}
+	a.fill(rect{x, y, width, 1}, style)
+	a.put(x+1, y, width-2, label, style)
+	// Thin opposing edges suggest a raised face without taking another row.
+	if enabled {
+		left, right := mix(style.GetBackground(), a.base.GetForeground(), 26), a.colors.shadow
+		if pressed {
+			left, right = right, left
+		}
+		a.put(x, y, 1, "▏", style.Foreground(left))
+		a.put(x+width-1, y, 1, "▕", style.Foreground(right))
+	}
+	a.buttons = append(a.buttons, button{rect: rect{x, y, width, 1}, Command: id, Hint: hint, Disabled: !enabled})
 	return width
 }
 func (a *App) drawToolbar() {

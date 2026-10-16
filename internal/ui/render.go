@@ -10,7 +10,6 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/gdamore/tcell/v3"
 	"github.com/rivo/uniseg"
-	"sunbook/internal/editor"
 	"sunbook/internal/lsp"
 	"sunbook/internal/text"
 )
@@ -86,7 +85,7 @@ func (a *App) layout() {
 func (a *App) draw() {
 	a.layout()
 	w, h := a.screen.Size()
-	a.screen.Clear()
+	a.screen.Fill(' ', a.base)
 	a.screen.HideCursor()
 	a.buttons = nil
 	a.treeFilterRect = rect{}
@@ -103,52 +102,12 @@ func (a *App) draw() {
 	if a.sideRect.W > 0 {
 		a.drawSidebar()
 		for y := 1; y < h-2; y++ {
-			a.put(a.sideRect.X+a.sideRect.W, y, 1, "│", a.muted)
+			a.put(a.sideRect.X+a.sideRect.W, y, 1, "│", a.base.Foreground(a.colors.border))
 		}
 	}
 	start := a.rects[0].X
 	a.fill(rect{start, 1, w - start, 1}, a.chrome)
-	a.tabs = nil
-	x := start
-	// Keep the active tab visible when the tab strip overflows.
-	activeIndex := 0
-	for i, d := range a.docs {
-		if d == a.view().Doc {
-			activeIndex = i
-		}
-	}
-	first := 0
-	used := 0
-	for i := activeIndex; i >= 0; i-- {
-		tw := min(28, text.Width(a.docs[i].Name(), 4)+6)
-		if used+tw > w-start {
-			first = i + 1
-			break
-		}
-		used += tw
-	}
-	for _, d := range a.docs[first:] {
-		label := " " + d.Name()
-		if d.Dirty() {
-			label += " •"
-		}
-		label += "  × "
-		tw := min(28, text.Width(label, 4))
-		if x+tw > w {
-			break
-		}
-		style := a.chrome
-		if d == a.view().Doc {
-			style = a.base.Foreground(tcell.GetColor(a.cfg.Theme.Accent)).Bold(true)
-		}
-		a.fill(rect{x, 1, tw, 1}, style)
-		a.put(x, 1, tw, label, style)
-		a.tabs = append(a.tabs, struct {
-			rect
-			Doc *editor.Document
-		}{rect{x, 1, tw, 1}, d})
-		x += tw
-	}
+	a.drawTabs(start, w-start)
 	path := a.view().Doc.Path
 	if path == "" {
 		path = "Untitled — Ctrl+S to save"
@@ -159,7 +118,7 @@ func (a *App) draw() {
 	a.drawEditor(0)
 	if a.split && a.rects[1].W > 0 {
 		for y := 3; y < a.rects[1].Y+a.rects[1].H; y++ {
-			a.put(a.rects[1].X-1, y, 1, "│", a.muted)
+			a.put(a.rects[1].X-1, y, 1, "│", a.base.Foreground(a.colors.border))
 		}
 		a.drawEditor(1)
 	}
@@ -177,15 +136,7 @@ func (a *App) draw() {
 	}
 	a.fill(rect{0, h - 2, w, 1}, a.base)
 	a.put(1, h-2, w-2, hint, style)
-	statusStyle := a.base.Background(tcell.GetColor("#28466c")).Foreground(tcell.GetColor("#e3edff"))
-	a.fill(rect{0, h - 1, w, 1}, statusStyle)
-	branch := a.git.Branch
-	if branch == "" {
-		branch = "workspace"
-	}
-	a.put(1, h-1, w-2, "⎇ "+branch+"   "+strings.ToUpper(a.focus), statusStyle)
-	right := a.status()
-	a.put(max(0, w-text.Width(right, 4)-1), h-1, min(w, text.Width(right, 4)), right, statusStyle)
+	a.drawStatus(w, h-1)
 	if a.completion != nil {
 		a.drawCompletion()
 	}
@@ -197,7 +148,7 @@ func (a *App) draw() {
 func (a *App) drawTree() {
 	r := a.sideRect
 	a.fill(r, a.chrome)
-	a.put(r.X+1, r.Y, min(9, r.W-2), "EXPLORER", a.chrome.Foreground(tcell.GetColor("#91a2b9")).Bold(true))
+	a.put(r.X+1, r.Y, min(9, r.W-2), "EXPLORER", a.chrome.Foreground(a.colors.muted).Bold(true))
 	if r.W >= 20 {
 		a.drawButton(r.X+r.W-8, r.Y, "+", "file.new", "New file (Ctrl+N)", false)
 		a.drawButton(r.X+r.W-4, r.Y, "R", "explorer.refresh", "Refresh Explorer", false)
@@ -205,25 +156,9 @@ func (a *App) drawTree() {
 	a.put(r.X+1, r.Y+1, r.W-2, filepath.Base(a.root), a.chrome.Bold(true))
 	a.treeFilterRect = rect{r.X + 1, r.Y + 2, max(1, r.W-6), 1}
 	field := a.treeFilterRect
-	fieldStyle := a.base
-	if a.focus == "filter" {
-		fieldStyle = a.selected
-	}
-	a.fill(field, fieldStyle)
-	a.treeQueryOffset = 0
-	if text.Width(a.treeQuery[:a.treeQueryCursor], a.cfg.TabSize) >= field.W {
-		a.treeQueryOffset = text.Offset(a.treeQuery, text.Width(a.treeQuery[:a.treeQueryCursor], a.cfg.TabSize)-field.W+1, a.cfg.TabSize)
-	}
-	if a.treeQuery == "" && a.focus != "filter" {
-		a.put(field.X, field.Y, field.W, "Filter files (/)", a.muted)
-	} else {
-		a.put(field.X, field.Y, field.W, a.treeQuery[a.treeQueryOffset:], fieldStyle)
-	}
+	a.treeQueryOffset = a.drawSidebarInput(field, a.treeQuery, a.treeQueryCursor, "Filter files (/)", "filter")
 	if a.treeQuery != "" {
 		a.drawButton(r.X+r.W-4, field.Y, "x", "explorer.clearFilter", "Clear Explorer filter (Esc)", false)
-	}
-	if a.focus == "filter" && a.modal == nil {
-		a.screen.ShowCursor(field.X+text.Width(a.treeQuery[a.treeQueryOffset:a.treeQueryCursor], a.cfg.TabSize), field.Y)
 	}
 	available := max(1, r.H-3)
 	if a.focus == "tree" {
@@ -255,11 +190,12 @@ func (a *App) drawTree() {
 		label := strings.Repeat("  ", e.Depth) + prefix + e.Name
 		style := a.chrome
 		if e.Dir {
-			style = style.Foreground(tcell.GetColor("#91b8ef"))
+			style = style.Foreground(a.colors.folder)
 		}
 		if idx == a.treeSelected && a.focus == "tree" {
 			style = a.selected
 			a.fill(rect{r.X, r.Y + 3 + i, r.W, 1}, style)
+			a.put(r.X, r.Y+3+i, 1, "▎", style.Foreground(a.accent.GetForeground()))
 		}
 		a.put(r.X+1, r.Y+3+i, r.W-2, label, style)
 	}
@@ -283,12 +219,12 @@ func (a *App) drawEditor(group int) {
 		row := v.Top + dy
 		y := r.Y + dy
 		if row >= b.LineCount() {
-			a.put(r.X, y, gutter, "  ~", a.muted)
+			a.put(r.X, y, gutter, "  ·", a.base.Foreground(a.colors.border))
 			continue
 		}
 		lineStyle := a.base
 		if group == a.active && row == current {
-			lineStyle = lineStyle.Background(tcell.GetColor("#1d2431"))
+			lineStyle = lineStyle.Background(a.colors.line)
 			a.fill(rect{r.X, y, r.W, 1}, lineStyle)
 		}
 		numberStyle := a.muted
@@ -298,7 +234,7 @@ func (a *App) drawEditor(group int) {
 		a.put(r.X, y, gutter-1, fmt.Sprintf("%*d", gutter-2, row+1), numberStyle)
 		for _, d := range diags {
 			if d.Range.Start.Line == row {
-				style := a.base.Foreground(tcell.GetColor("#f08080"))
+				style := a.base.Foreground(a.colors.danger)
 				a.put(r.X+gutter-1, y, 1, "!", style)
 				break
 			}
@@ -325,7 +261,7 @@ func (a *App) drawEditor(group int) {
 			if spanIdx < len(hl.Spans) && hl.Spans[spanIdx].Start <= p {
 				style = hl.Spans[spanIdx].Style
 				if row == current && group == a.active {
-					style = style.Background(tcell.GetColor("#1d2431"))
+					style = style.Background(a.colors.line)
 				}
 			}
 			for _, diag := range diags {
@@ -339,12 +275,12 @@ func (a *App) drawEditor(group int) {
 				}
 			}
 			if p == matchA || p == matchB {
-				style = style.Background(tcell.GetColor("#395065")).Bold(true)
+				style = style.Background(a.colors.selection).Bold(true)
 			}
 			for _, sel := range v.Selections {
 				loSel, z := sel.Range()
 				if p < z && offset+hi > loSel {
-					style = style.Background(tcell.GetColor("#344d78"))
+					style = style.Background(a.colors.selection)
 				}
 				if sel.Head == p && (group != a.active || a.focus != "editor" || sel.Head != v.Head()) {
 					style = style.Reverse(true)
@@ -532,7 +468,7 @@ func (a *App) drawProblems() {
 	r := a.panelRect
 	items := a.problems()
 	if len(items) == 0 {
-		a.put(r.X+1, r.Y+1, r.W-2, "No diagnostics. Language server status is available via Help: Dependency Check.", a.muted)
+		a.put(r.X+1, r.Y+1, r.W-2, "No problems reported.", a.muted)
 		return
 	}
 	if a.focus == "problems" {
@@ -585,24 +521,33 @@ func (a *App) drawModal() {
 	m := a.modal
 	w, h := a.screen.Size()
 	width := max(1, min(96, w-4))
-	height := min(h-4, 20)
+	height := min(h-2, 20)
 	if height < 3 {
 		height = h
 	}
 	x := (w - width) / 2
 	y := max(1, (h-height)/3)
 	a.modalRect = rect{x, y, width, height}
+	a.fill(rect{x + 1, y + 1, width, height}, a.base.Background(a.colors.shadow))
 	a.fill(a.modalRect, a.chrome)
-	a.put(x+1, y, width-2, " "+m.Title+" ", a.accent.Bold(true))
+	border := a.chrome.Foreground(a.colors.border)
+	a.put(x, y, width, "╭"+strings.Repeat("─", max(0, width-2))+"╮", border)
+	a.put(x, y+height-1, width, "╰"+strings.Repeat("─", max(0, width-2))+"╯", border)
+	for row := y + 1; row < y+height-1; row++ {
+		a.put(x, row, 1, "│", border)
+		a.put(x+width-1, row, 1, "│", border)
+	}
+	a.put(x+2, y, width-4, " "+fitLabel(m.Title, width-6)+" ", a.accent.Background(a.chrome.GetBackground()).Bold(true))
 	contentY := y + 2
 	if m.InputEnabled {
-		a.fill(rect{x + 1, contentY, width - 2, 1}, a.base)
+		fieldStyle := a.inputStyle(true)
+		a.fill(rect{x + 2, contentY, width - 4, 1}, fieldStyle)
 		inputWidth := max(1, width-4)
 		offset := 0
 		if text.Width(m.Input[:m.Cursor], a.cfg.TabSize) >= inputWidth {
 			offset = text.Offset(m.Input, text.Width(m.Input[:m.Cursor], a.cfg.TabSize)-inputWidth+1, a.cfg.TabSize)
 		}
-		a.put(x+2, contentY, inputWidth, m.Input[offset:], a.base)
+		a.put(x+2, contentY, inputWidth, m.Input[offset:], fieldStyle)
 		a.screen.ShowCursor(x+2+text.Width(m.Input[offset:m.Cursor], a.cfg.TabSize), contentY)
 		contentY += 2
 	} else {
@@ -619,8 +564,9 @@ func (a *App) drawModal() {
 		}
 		contentY++
 	}
-	available := max(0, y+height-2-contentY)
+	available := max(0, y+height-3-contentY)
 	m.ListY = contentY
+	m.ListH = available
 	if len(m.Visible) > 0 {
 		if m.Selected < m.Top {
 			m.Top = m.Selected
@@ -637,18 +583,32 @@ func (a *App) drawModal() {
 				style = a.selected
 				a.fill(rect{x + 1, contentY + i, width - 2, 1}, style)
 			}
-			a.put(x+2, contentY+i, width-4, it.Label, style)
+			labelWidth := width - 4
 			if it.Detail != "" {
 				detailWidth := min(width/3, text.Width(it.Detail, 4))
-				a.put(x+width-detailWidth-2, contentY+i, detailWidth, it.Detail, style.Foreground(tcell.GetColor("#92a1b9")))
+				labelWidth -= detailWidth + 2
+				a.put(x+width-detailWidth-2, contentY+i, detailWidth, fitLabel(it.Detail, detailWidth), style.Foreground(a.colors.muted))
 			}
+			a.put(x+2, contentY+i, labelWidth, fitLabel(it.Label, labelWidth), style)
 		}
 	} else if len(m.Body) > 0 {
 		for i := 0; i < available && i+m.Top < len(m.Body); i++ {
-			a.put(x+2, contentY+i, width-4, m.Body[i+m.Top], a.chrome)
+			line := m.Body[i+m.Top]
+			style := a.chrome
+			if strings.HasPrefix(m.Title, "Diff:") {
+				switch {
+				case strings.HasPrefix(line, "@@"):
+					style = style.Foreground(a.accent.GetForeground())
+				case strings.HasPrefix(line, "+"):
+					style = style.Foreground(a.colors.success)
+				case strings.HasPrefix(line, "-"):
+					style = style.Foreground(a.colors.danger)
+				}
+			}
+			a.put(x+2, contentY+i, width-4, line, style)
 		}
 	} else if m.Filter {
 		a.put(x+2, contentY, width-4, "No matches", a.muted)
 	}
-	a.put(x+1, y+height-1, width-2, m.Hint, a.muted)
+	a.put(x+2, y+height-2, width-4, fitLabel(m.Hint, width-4), a.chrome.Foreground(a.colors.muted))
 }
