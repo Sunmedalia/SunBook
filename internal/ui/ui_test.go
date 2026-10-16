@@ -166,12 +166,13 @@ func TestEditingOperationsAndCompletion(t *testing.T) {
 }
 func TestPanelHeaderMouseAndPreview(t *testing.T) {
 	a, _ := testApp(t)
+	a.cfg.Shell = "/bin/sh"
 	a.panelVisible = true
 	a.panel = "Problems"
 	a.draw()
 	r := a.panelRect
 	click(a, r.X+16, r.Y-1)
-	if a.panel != "Git" || a.drag != "" {
+	if a.panel != "Terminal" || a.drag != "" {
 		t.Fatal("panel click interpreted as drag", a.panel, a.drag)
 	}
 	a.choose("Preview", []item{{Label: "Apply"}, {Label: "Cancel"}})

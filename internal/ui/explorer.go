@@ -53,7 +53,7 @@ func workspaceFiles(ctx context.Context, root string) ([]string, error) {
 	return paths, err
 }
 func (a *App) focusTreeFilter() {
-	a.sidebar = true
+	a.showSidebar("Explorer")
 	a.focus = "filter"
 	a.treeQueryCursor = len(a.treeQuery)
 	a.completion = nil

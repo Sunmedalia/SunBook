@@ -69,68 +69,80 @@ type completionState struct {
 	Items                   []lsp.Completion
 }
 type App struct {
-	screen                                           tcell.Screen
-	cfg                                              config.Config
-	root                                             string
-	ctx                                              context.Context
-	cancel                                           context.CancelFunc
-	updates                                          chan func()
-	docs                                             []*editor.Document
-	views                                            [2]*editor.View
-	viewCache                                        [2]map[*editor.Document]*editor.View
-	active                                           int
-	split                                            bool
-	splitRatio                                       float64
-	sidebar                                          bool
-	sidebarWidth, panelHeight                        int
-	focus, panel                                     string
-	panelVisible                                     bool
-	tree                                             []treeEntry
-	treeAll                                          []treeEntry
-	treeQuery                                        string
-	treeQueryCursor, treeQueryOffset                 int
-	treeFilterRect                                   rect
-	treeFiles                                        []string
-	treeIndexReady, treeIndexLoading                 bool
-	treeIndexSeq                                     int
-	treeIndexCancel                                  context.CancelFunc
-	treeSelected, treeTop                            int
-	expanded                                         map[string]bool
-	treeSeq                                          int
-	modal                                            *modal
-	commands                                         []command
-	bindings                                         map[string]string
-	message                                          string
-	prefix                                           string
-	messageUntil                                     time.Time
-	quit                                             bool
-	clipboard                                        clipboard.Clipboard
-	clients                                          map[string]*lsp.Client
-	starting                                         map[string]bool
-	languageSeq                                      int
-	serverErrors                                     map[string]string
-	opened                                           map[*editor.Document]*lsp.Client
-	diagnostics                                      map[string]lsp.Diagnostics
-	highlight                                        map[*editor.Document]highlights
-	highlightPending                                 map[*editor.Document]int
-	highlightDue                                     map[*editor.Document]time.Time
-	highlightRunning                                 map[*editor.Document]bool
-	completion                                       *completionState
-	completionDue                                    time.Time
-	git                                              gitservice.Status
-	gitError                                         string
-	gitSelected, gitTop, problemSelected, problemTop int
-	gitBusy                                          bool
-	gitSeq                                           int
-	term                                             *terminal.Session
-	termOffset                                       int
-	termExited                                       bool
-	termSeq                                          int
-	fileCheck                                        bool
-	searchCancel                                     context.CancelFunc
-	rects                                            [2]rect
-	sideRect, panelRect                              rect
-	tabs                                             []struct {
+	screen                                                tcell.Screen
+	cfg                                                   config.Config
+	root                                                  string
+	ctx                                                   context.Context
+	cancel                                                context.CancelFunc
+	updates                                               chan func()
+	docs                                                  []*editor.Document
+	views                                                 [2]*editor.View
+	viewCache                                             [2]map[*editor.Document]*editor.View
+	active                                                int
+	split                                                 bool
+	splitRatio                                            float64
+	sidebar                                               bool
+	sidebarView                                           string
+	activityRect                                          rect
+	sideHits                                              []sideHit
+	sidebarWidth, panelHeight                             int
+	focus, panel                                          string
+	panelVisible                                          bool
+	tree                                                  []treeEntry
+	treeAll                                               []treeEntry
+	treeQuery                                             string
+	treeQueryCursor, treeQueryOffset                      int
+	treeFilterRect                                        rect
+	treeFiles                                             []string
+	treeIndexReady, treeIndexLoading                      bool
+	treeIndexSeq                                          int
+	treeIndexCancel                                       context.CancelFunc
+	treeSelected, treeTop                                 int
+	expanded                                              map[string]bool
+	treeSeq                                               int
+	modal                                                 *modal
+	commands                                              []command
+	bindings                                              map[string]string
+	message                                               string
+	prefix                                                string
+	messageUntil                                          time.Time
+	quit                                                  bool
+	clipboard                                             clipboard.Clipboard
+	clients                                               map[string]*lsp.Client
+	starting                                              map[string]bool
+	languageSeq                                           int
+	serverErrors                                          map[string]string
+	opened                                                map[*editor.Document]*lsp.Client
+	diagnostics                                           map[string]lsp.Diagnostics
+	highlight                                             map[*editor.Document]highlights
+	highlightPending                                      map[*editor.Document]int
+	highlightDue                                          map[*editor.Document]time.Time
+	highlightRunning                                      map[*editor.Document]bool
+	completion                                            *completionState
+	completionDue                                         time.Time
+	git                                                   gitservice.Status
+	gitError                                              string
+	gitSelected, gitTop, problemSelected, problemTop      int
+	gitBusy                                               bool
+	gitReading                                            bool
+	gitSeq                                                int
+	term                                                  *terminal.Session
+	termOffset                                            int
+	termExited                                            bool
+	termSeq                                               int
+	fileCheck                                             bool
+	searchCancel                                          context.CancelFunc
+	searchQuery                                           string
+	searchCursor, searchOffset, searchSelected, searchTop int
+	searchInputRect                                       rect
+	searchResults                                         []searchHit
+	searchRunning                                         bool
+	searchError                                           string
+	searchSeq                                             int
+	searchDue                                             time.Time
+	rects                                                 [2]rect
+	sideRect, panelRect                                   rect
+	tabs                                                  []struct {
 		rect
 		Doc *editor.Document
 	}
@@ -172,6 +184,7 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 		a.viewCache[i] = map[*editor.Document]*editor.View{}
 	}
 	a.highlightDue = map[*editor.Document]time.Time{}
+	a.sidebarView = "Explorer"
 	a.highlightRunning = map[*editor.Document]bool{}
 	a.base = tcell.StyleDefault.Background(tcell.GetColor(cfg.Theme.Background)).Foreground(tcell.GetColor(cfg.Theme.Foreground))
 	a.muted = a.base.Foreground(tcell.GetColor("#68788f"))
@@ -239,6 +252,9 @@ func (a *App) Run() error {
 			a.refreshGit()
 		case <-tick.C:
 			a.flushHighlights()
+			if !a.searchDue.IsZero() && !time.Now().Before(a.searchDue) {
+				a.startWorkspaceSearch()
+			}
 			if !a.completionDue.IsZero() && time.Now().After(a.completionDue) {
 				a.completionDue = time.Time{}
 				a.requestCompletion(false)
@@ -413,7 +429,7 @@ func (a *App) showTerminal() {
 }
 func (a *App) hidePanel() {
 	a.panelVisible = false
-	if a.focus == "terminal" || a.focus == "git" || a.focus == "problems" {
+	if a.focus == "terminal" || a.focus == "problems" {
 		a.focus = "editor"
 	}
 }
@@ -723,6 +739,11 @@ func (a *App) switchWorkspace() {
 				a.term = nil
 			}
 			a.root = path
+			a.clearWorkspaceSearch()
+			a.git = gitservice.Status{}
+			a.gitError = ""
+			a.gitSelected = 0
+			a.gitTop = 0
 			if a.treeIndexCancel != nil {
 				a.treeIndexCancel()
 			}
@@ -748,6 +769,7 @@ func (a *App) switchWorkspace() {
 			a.scanTree()
 			a.gitSeq++
 			a.gitBusy = false
+			a.gitReading = false
 			a.refreshGit()
 		}
 		next(0)

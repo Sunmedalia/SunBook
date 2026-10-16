@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -107,86 +106,6 @@ func (a *App) quickOpen() {
 			}
 		})
 	}()
-}
-func (a *App) workspaceSearch() {
-	a.prompt("Search Workspace", "", func(query string) {
-		if query == "" {
-			return
-		}
-		if a.searchCancel != nil {
-			a.searchCancel()
-		}
-		ctx, cancel := context.WithCancel(a.ctx)
-		a.searchCancel = cancel
-		root := a.root
-		m := &modal{Title: "Search: " + query, Hint: "Searching… · Esc cancels", InputEnabled: false}
-		a.setModal(m)
-		go func() {
-			cmd := exec.CommandContext(ctx, "rg", "--json", "--smart-case", "--", query, root)
-			pipe, e := cmd.StdoutPipe()
-			if e != nil {
-				a.post(func() { a.showError(e) })
-				return
-			}
-			if e = cmd.Start(); e != nil {
-				a.post(func() { a.showError(fmt.Errorf("workspace search requires ripgrep: %w", e)) })
-				return
-			}
-			scanner := bufio.NewScanner(pipe)
-			scanner.Buffer(make([]byte, 4096), 4*1024*1024)
-			var items []item
-			for scanner.Scan() {
-				var row struct {
-					Type string `json:"type"`
-					Data struct {
-						Path struct {
-							Text string `json:"text"`
-						} `json:"path"`
-						Lines struct {
-							Text string `json:"text"`
-						} `json:"lines"`
-						Line       int `json:"line_number"`
-						Submatches []struct {
-							Start int `json:"start"`
-						} `json:"submatches"`
-					} `json:"data"`
-				}
-				if json.Unmarshal(scanner.Bytes(), &row) != nil || row.Type != "match" {
-					continue
-				}
-				path := row.Data.Path.Text
-				if path == "" {
-					continue
-				}
-				line := row.Data.Line - 1
-				col := 0
-				if len(row.Data.Submatches) > 0 {
-					col = row.Data.Submatches[0].Start
-				}
-				rel, _ := filepath.Rel(root, path)
-				items = append(items, item{Label: fmt.Sprintf("%s:%d", rel, line+1), Detail: strings.TrimSpace(row.Data.Lines.Text), Action: func() { a.jump(path, line, col) }})
-				if len(items) >= 2000 {
-					cancel()
-					break
-				}
-			}
-			scanErr := scanner.Err()
-			err := cmd.Wait()
-			a.post(func() {
-				if a.modal != m {
-					return
-				}
-				m.Items = items
-				m.Hint = fmt.Sprintf("%d results (limit 2000) · Enter opens · Esc closes", len(items))
-				if scanErr != nil {
-					a.showError(scanErr)
-				} else if err != nil && len(items) == 0 && ctx.Err() == nil {
-					a.notify("Search returned no results or an invalid pattern")
-				}
-				a.filterModal()
-			})
-		}()
-	})
 }
 func (a *App) jump(path string, line, col int) {
 	if e := a.open(path); e != nil {
@@ -763,10 +682,10 @@ func (a *App) previewWorkspaceEdit(ws lsp.WorkspaceEdit) {
 	a.modal.Body = body
 }
 func (a *App) refreshGit() {
-	if a.gitBusy {
+	if a.gitBusy || a.gitReading {
 		return
 	}
-	a.gitBusy = true
+	a.gitReading = true
 	root := a.root
 	a.gitSeq++
 	seq := a.gitSeq
@@ -778,24 +697,47 @@ func (a *App) refreshGit() {
 			if seq != a.gitSeq || a.root != root {
 				return
 			}
-			a.gitBusy = false
+			a.gitReading = false
 			if e != nil {
 				a.gitError = e.Error()
 				a.git = gitservice.Status{}
 				return
 			}
+			oldPath := ""
+			oldStaged := false
+			if entry, ok := a.selectedGitEntry(); ok {
+				oldPath = a.git.Files[entry.File].Path
+				oldStaged = entry.Staged
+			}
 			a.git = status
 			a.gitError = ""
-			a.gitSelected = max(0, min(a.gitSelected, len(status.Files)-1))
+			a.gitSelected = max(0, min(a.gitSelected, len(a.gitEntries())-1))
+			a.gitTop = max(0, min(a.gitTop, max(0, len(a.gitRows())-1)))
+			fallback := -1
+			for i, entry := range a.gitEntries() {
+				if a.git.Files[entry.File].Path == oldPath {
+					fallback = i
+					if entry.Staged == oldStaged {
+						break
+					}
+				}
+			}
+			if fallback >= 0 {
+				a.gitSelected = fallback
+			}
 		})
 	}()
 }
 func (a *App) gitAction(stage bool) {
-	if a.gitSelected >= len(a.git.Files) || a.gitBusy {
+	entry, ok := a.selectedGitEntry()
+	if !ok || a.gitBusy {
 		return
 	}
-	f := a.git.Files[a.gitSelected]
+	f := a.git.Files[entry.File]
 	root := a.git.Root
+	workspace := a.root
+	a.gitSeq++
+	a.gitReading = false
 	a.gitBusy = true
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
@@ -806,20 +748,32 @@ func (a *App) gitAction(stage bool) {
 		} else {
 			e = gitservice.Unstage(ctx, root, f.Path)
 		}
-		a.post(func() { a.gitBusy = false; a.showError(e); a.refreshGit() })
+		a.post(func() {
+			if a.root != workspace {
+				return
+			}
+			a.gitBusy = false
+			a.showError(e)
+			a.refreshGit()
+		})
 	}()
 }
 func (a *App) gitDiff(staged bool) {
-	if a.gitSelected >= len(a.git.Files) {
+	entry, ok := a.selectedGitEntry()
+	if !ok {
 		return
 	}
-	f := a.git.Files[a.gitSelected]
+	f := a.git.Files[entry.File]
 	root := a.git.Root
+	workspace := a.root
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
 		defer cancel()
 		s, e := gitservice.Diff(ctx, root, f, staged)
 		a.post(func() {
+			if a.root != workspace {
+				return
+			}
 			if e != nil {
 				a.showError(e)
 				return
@@ -842,13 +796,19 @@ func (a *App) commit() {
 			return
 		}
 		a.gitBusy = true
+		a.gitSeq++
+		a.gitReading = false
 		root := a.git.Root
+		workspace := a.root
 		a.notify("Committing…")
 		go func() {
 			ctx, cancel := context.WithTimeout(a.ctx, 60*time.Second)
 			defer cancel()
 			e := gitservice.Commit(ctx, root, msg)
 			a.post(func() {
+				if a.root != workspace {
+					return
+				}
 				a.gitBusy = false
 				if e != nil {
 					a.showError(e)

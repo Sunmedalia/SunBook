@@ -25,6 +25,7 @@ def main():
         nested.write_text("nested sample", encoding="utf-8")
         config = Path(workspace) / "smoke-config.json"
         config.write_text(json.dumps({"shell": "/bin/sh"}), encoding="utf-8")
+        subprocess.run(["git", "init", "-q", workspace], check=True, capture_output=True)
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 110, 0, 0))
         env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor",
@@ -89,12 +90,31 @@ def main():
 
             # Filter files in an unopened directory, then open a result.
             received.clear()
-            click(3, 4)
+            click(8, 4)
             paste("needle")
             wait_for(lambda: b"nested/needle.txt" in received, "Explorer filter")
             received.clear()
             os.write(master, b"\r")
             wait_for(lambda: b"nested sample" in received, "filtered file opens")
+
+            # Workspace Search and Git now live in persistent left sidebars.
+            received.clear()
+            click(3, 6)  # activity S
+            paste("nested sample")
+            wait_for(lambda: b"1 results" in received, "Search sidebar results")
+            received.clear()
+            click(3, 9)  # activity G
+            wait_for(lambda: b"CONTROL" in received and b"CHANGES" in received, "Git sidebar")
+            os.write(master, b"s")  # stage first row: nested/needle.txt
+            wait_for(lambda: subprocess.run(["git", "-C", workspace, "ls-files", "--error-unmatch", "--", "nested/needle.txt"],
+                                            capture_output=True).returncode == 0, "Git sidebar stages file")
+            staged = subprocess.check_output(["git", "-C", workspace, "show", ":nested/needle.txt"])
+            if staged != b"nested sample":
+                raise AssertionError("Git sidebar staged an unexpected file")
+            click(3, 3)  # activity E restores Explorer
+            received.clear()
+            click(3, 6)  # activity S restores query and results
+            wait_for(lambda: b"1 results" in received, "Search state survives activity switches")
 
             # Use the top New button and save a new buffer through Save As.
             click(13, 1)
@@ -113,7 +133,7 @@ def main():
             os.write(master, b"View: Toggle Split Editor\r")
             time.sleep(.1)
             # SGR mouse: click and drag in the first editor, exercising input parsing.
-            os.write(master, b"\x1b[<0;32;4M\x1b[<32;36;4M\x1b[<0;36;4m")
+            os.write(master, b"\x1b[<0;37;4M\x1b[<32;41;4M\x1b[<0;41;4m")
             # Resize the host terminal while the split editor is active.
             fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
             received.clear()
@@ -133,7 +153,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, Explorer filter, toolbar, palette, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, toolbar, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()

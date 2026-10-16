@@ -89,7 +89,7 @@ func (a *App) key(e *tcell.EventKey) {
 			return
 		}
 	}
-	if id := a.bindings[name]; id == "view.panel" || id == "view.hidePanel" {
+	if id := a.bindings[name]; id == "view.panel" || id == "view.hidePanel" || id == "view.sidebar" || id == "view.explorer" || id == "view.git" || id == "search.workspace" {
 		a.execute(id)
 		return
 	}
@@ -98,6 +98,14 @@ func (a *App) key(e *tcell.EventKey) {
 			a.termOffset = 0
 			a.term.Key(terminalKey(e))
 		}
+		return
+	}
+	if a.focus == "searchInput" {
+		a.searchInputKey(e, name)
+		return
+	}
+	if a.focus == "search" {
+		a.searchResultsKey(e, name)
 		return
 	}
 	if a.focus == "filter" {
@@ -176,9 +184,9 @@ func (a *App) key(e *tcell.EventKey) {
 	if a.focus == "git" {
 		switch name {
 		case "up":
-			a.gitSelected = max(0, a.gitSelected-1)
+			a.moveGitSelection(-1)
 		case "down":
-			a.gitSelected = min(len(a.git.Files)-1, a.gitSelected+1)
+			a.moveGitSelection(1)
 		case "s":
 			a.gitAction(true)
 		case "u":
@@ -187,8 +195,10 @@ func (a *App) key(e *tcell.EventKey) {
 			if e.Str() == "D" {
 				a.gitDiff(true)
 			} else {
-				a.gitDiff(false)
+				a.selectedGitDiff()
 			}
+		case "o":
+			a.openGitFile()
 		case "c":
 			a.commit()
 		case "escape":
@@ -345,25 +355,27 @@ func (a *App) typeInput(s string) {
 	}
 }
 func (a *App) cycleFocus() {
-	switch a.focus {
-	case "editor":
-		if a.sidebar {
-			a.focus = "tree"
-		} else if a.panelVisible {
-			a.focus = strings.ToLower(a.panel)
+	if a.focus == "editor" {
+		if a.sidebar && a.sideRect.W > 0 {
+			a.focusSidebar()
+			return
 		}
-	case "tree":
 		if a.panelVisible {
 			a.focus = strings.ToLower(a.panel)
 			if a.focus == "terminal" {
 				a.startTerminal()
 			}
-		} else {
-			a.focus = "editor"
 		}
-	default:
-		a.focus = "editor"
+		return
 	}
+	if sidebarFocus(a.focus) && a.panelVisible {
+		a.focus = strings.ToLower(a.panel)
+		if a.focus == "terminal" {
+			a.startTerminal()
+		}
+		return
+	}
+	a.focus = "editor"
 }
 func terminalKey(e *tcell.EventKey) uv.Key {
 	k := uv.Key{Text: e.Str()}
@@ -493,9 +505,6 @@ func (a *App) modalKey(e *tcell.EventKey, name string) {
 		return
 	case "escape":
 		a.modal = nil
-		if a.searchCancel != nil {
-			a.searchCancel()
-		}
 		return
 	case "enter":
 		if len(m.Items) > 0 || m.Submit != nil {
@@ -628,7 +637,7 @@ func (a *App) mouse(e *tcell.EventMouse) {
 	if press && a.drag != "" && !fresh {
 		switch a.drag {
 		case "sidebar":
-			a.sidebarWidth = max(14, x)
+			a.sidebarWidth = max(20, x-a.sideRect.X)
 		case "panel":
 			_, h := a.screen.Size()
 			a.panelHeight = max(4, h-y-2)
@@ -664,22 +673,7 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		}
 	}
 	if a.sidebar && a.sideRect.contains(x, y) {
-		if fresh && a.treeFilterRect.contains(x, y) {
-			a.focusTreeFilter()
-			a.treeQueryCursor = a.treeQueryOffset + text.Offset(a.treeQuery[a.treeQueryOffset:], max(0, x-a.treeFilterRect.X), a.cfg.TabSize)
-			return
-		}
-		if wheel != 0 {
-			a.treeTop = max(0, min(max(0, len(a.tree)-1), a.treeTop+wheel))
-		}
-		if fresh {
-			a.focus = "tree"
-			idx := a.treeTop + y - a.sideRect.Y - 3
-			if idx >= 0 && idx < len(a.tree) {
-				a.treeSelected = idx
-				a.toggleTree()
-			}
-		}
+		a.sidebarMouse(e, fresh, wheel)
 		return
 	}
 	if y == 1 && fresh {
@@ -812,18 +806,6 @@ func (a *App) panelMouse(e *tcell.EventMouse, fresh bool, wheel int, previous tc
 		if fresh {
 			a.focus = "terminal"
 			a.startTerminal()
-		}
-	case "Git":
-		if wheel != 0 {
-			a.gitTop = max(0, min(max(0, len(a.git.Files)-1), a.gitTop+wheel))
-		}
-		if fresh {
-			a.focus = "git"
-			i := y - a.panelRect.Y - 1 + a.gitTop
-			if i >= 0 && i < len(a.git.Files) {
-				a.gitSelected = i
-				a.gitDiff(false)
-			}
 		}
 	case "Problems":
 		if wheel != 0 {

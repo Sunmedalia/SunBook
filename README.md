@@ -17,12 +17,15 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 
 ## Editor
 
-- Explorer, file tabs, draggable panel borders, and two side-by-side editors.
+- VS Code style activity bar: `[E]` Explorer, `[S]` Search, `[G]` Source Control.
+  Each opens a persistent left sidebar; clicking the active activity hides it.
+  Ctrl+B hides/restores the sidebar while the activity bar stays visible.
+  File tabs, draggable panel borders, and two side-by-side editors.
 - Clickable top toolbar: New, Open, Save, Find, Undo/Redo, Split, Terminal,
   and More (command palette). Narrow windows keep the actions that fit;
   all actions remain available under More/F1. Hover shows an action hint.
 - Explorer has an inline filename/path filter, including files in collapsed
-  directories. Click the field, press Ctrl+Shift+E, or press `/` / Ctrl+F
+  directories. Click the field, or press `/` / Ctrl+F
   while the Explorer is focused. Matching is case-insensitive and fuzzy.
   Down selects results, Enter opens a file, and Esc or `[x]` clears the filter.
   Normal expanded folders are restored when the filter is cleared. With
@@ -60,12 +63,13 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 | Ctrl+Shift+F | Search workspace (ripgrep) |
 | Ctrl+G | Go to line[:column] |
 | Ctrl+B / Ctrl+J | Toggle sidebar / bottom panel |
-| Ctrl+Shift+E | Focus Explorer filter |
+| Ctrl+Shift+E | Show Explorer sidebar |
+| Ctrl+Shift+G | Show Source Control sidebar |
 | Ctrl+\ | Toggle split editor |
 | Ctrl+K, Ctrl+O | Focus the other editor |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous file tab |
 | F4 | Open shell / switch focus between shell and editor |
-| F6 | Cycle editor, explorer, and bottom panel focus |
+| F6 | Cycle editor, active sidebar, and bottom panel focus |
 | Ctrl+Space | Completion |
 | F12 / Shift+F12 | Definition / references |
 | F2 / Alt+H / Alt+Shift+F | Rename symbol / hover / format |
@@ -73,7 +77,8 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 | Ctrl+Q | Quit (prompts for unsaved changes) |
 
 In the shell, ordinary keys including Ctrl+C go to the child process. F1, F4,
-and F6 remain editor focus controls; Ctrl+J toggles the panel even with shell
+and F6 remain editor focus controls; sidebar shortcuts also work with shell
+focus. Ctrl+J toggles the bottom panel even with shell
 focus. Click **Hide** in the panel header to hide it and keep the shell running.
 Click **Kill** to end the shell session and close its panel. F4 switches focus
 between the visible shell and the editor, and opens a hidden terminal again.
@@ -125,13 +130,23 @@ Python environment, or `tsconfig.json` gives better results than loose files.
 
 ## Git and terminal
 
-Use **View: Source Control** from F1, or click the Git bottom-panel tab.
-Select files with arrows or the mouse. `s` stages a file; `u` unstages it;
-`d`/Enter shows the worktree diff; `D` shows the staged diff; `c` commits staged
+Use `[G]`, Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
+sidebar. Staged Changes and Changes are separate groups; a file with both
+staged and unstaged edits appears in each. Click a row or press `d`/Enter for
+that version's diff; `D` always shows the staged diff. `s` stages a file;
+`u` unstages it; `o` opens the file; `c` commits staged
 changes. Errors and hook failures appear in the status message. Commit messages
 and paths are passed directly to Git, never interpolated into shell commands.
 Configure Git name/email and signing separately as usual. There is no push,
 branch management, or discard-changes command in this release.
+
+Use `[S]` or Ctrl+Shift+F for the Search sidebar. It searches after a short
+typing pause, or immediately with Enter / Go, using ripgrep regexes and smart
+case. Results are grouped by file; click a match or select it with arrows and
+Enter to jump to its line and column. Clear resets results; Stop cancels work.
+The query, results, and scroll position remain when switching sidebars.
+Explorer's filter and Git selection also keep their state. Terminal and
+Problems stay in the independent bottom panel.
 
 The terminal uses a real Unix PTY and a VT emulator, with colors, cursor
 addressing, alternate screen, resize, and 10,000 lines of scrollback. Wheel
@@ -180,7 +195,7 @@ editor is intended for ordinary source files; it is not a large-file viewer.
 
 ```sh
 make check                  # tests with race detection, then vet
-make smoke                  # build and exercise the TUI through a real PTY
+make smoke                  # real PTY UI test; requires git and ripgrep
 SUNBOOK_LSP_INTEGRATION=1 go test ./internal/lsp -run TestRealServers -v
 go test ./internal/text -run '^$' -bench . -benchmem
 ```

@@ -55,8 +55,12 @@ func (a *App) registerCommands() {
 		{"search.replace", "Search: Replace in File", "ctrl+h", func() { a.find(true) }},
 		{"search.workspace", "Search: Find in Workspace", "ctrl+shift+f", a.workspaceSearch},
 		{"navigate.line", "Go to Line…", "ctrl+g", a.goLine},
-		{"view.sidebar", "View: Toggle Sidebar", "ctrl+b", func() { a.sidebar = !a.sidebar }},
-		{"explorer.filter", "Explorer: Filter Files", "ctrl+shift+e", a.focusTreeFilter},
+		{"view.sidebar", "View: Toggle Sidebar", "ctrl+b", a.toggleSidebar},
+		{"view.explorer", "View: Explorer", "ctrl+shift+e", func() { a.showSidebar("Explorer") }},
+		{"activity.explorer", "Activity: Toggle Explorer", "", func() { a.toggleSidebarView("Explorer") }},
+		{"activity.search", "Activity: Toggle Search", "", func() { a.toggleSidebarView("Search") }},
+		{"activity.git", "Activity: Toggle Source Control", "", func() { a.toggleSidebarView("Git") }},
+		{"explorer.filter", "Explorer: Filter Files", "", a.focusTreeFilter},
 		{"explorer.clearFilter", "Explorer: Clear Filter", "", func() { a.setTreeQuery(""); a.focus = "filter" }},
 		{"explorer.refresh", "Explorer: Refresh", "", a.scanTree},
 		{"view.split", "View: Toggle Split Editor", "ctrl+\\", a.splitEditor},
@@ -80,7 +84,10 @@ func (a *App) registerCommands() {
 		{"terminal.kill", "Terminal: Kill Shell Session", "", a.killTerminal},
 		{"view.nextFocus", "View: Focus Next Panel", "f6", a.cycleFocus},
 		{"view.problems", "View: Problems", "", func() { a.panel = "Problems"; a.panelVisible = true; a.focus = "problems" }},
-		{"view.git", "View: Source Control", "", func() { a.panel = "Git"; a.panelVisible = true; a.focus = "git"; a.refreshGit() }},
+		{"view.git", "View: Source Control", "ctrl+shift+g", func() { a.showSidebar("Git") }},
+		{"search.run", "Search: Run Workspace Search", "", a.startWorkspaceSearch},
+		{"search.clear", "Search: Clear Workspace Search", "", a.clearWorkspaceSearch},
+		{"search.stop", "Search: Stop Workspace Search", "", a.stopWorkspaceSearch},
 		{"language.complete", "Language: Trigger Completion", "ctrl+space", func() { a.requestCompletion(true) }},
 		{"language.hover", "Language: Hover", "alt+h", a.hover},
 		{"language.definition", "Language: Go to Definition", "f12", func() { a.definition(false) }},
@@ -93,6 +100,8 @@ func (a *App) registerCommands() {
 		{"git.unstage", "Git: Unstage Selected File", "", func() { a.gitAction(false) }},
 		{"git.diff", "Git: Show Worktree Diff", "", func() { a.gitDiff(false) }},
 		{"git.stagedDiff", "Git: Show Staged Diff", "", func() { a.gitDiff(true) }},
+		{"git.selectedDiff", "Git: Show Selected Diff", "", a.selectedGitDiff},
+		{"git.open", "Git: Open Selected File", "", a.openGitFile},
 		{"git.commit", "Git: Commit Staged Changes…", "", a.commit},
 	}
 	a.bindings = map[string]string{"f1": "app.commands", "ctrl+shift+z": "edit.redo", "f3": "search.find", "f5": "git.refresh"}
@@ -132,7 +141,7 @@ func (a *App) help() {
 			s += fmt.Sprintf("%-24s %s\n", c.Key, c.Label)
 		}
 	}
-	s += "\nF1: command palette · F6: cycle focus · Esc: close overlay / clear extra cursors\nMouse: click / drag / double click / triple click / wheel\nAlt+click: add cursor · drag borders: resize panels\nTerminal: F4 focuses editor; Ctrl+J / [Hide] hides panel; [Kill] ends shell.\nExplorer: click filter or press /; Esc clears; Down selects results.\nGit panel: s stage · u unstage · d diff · D staged diff · c commit\nModal input: Ctrl+U clears · Up/Down choose · Enter accepts\nAll actions are accessible through the command palette.\n"
+	s += "\nF1: command palette · F6: cycle focus · Esc: close overlay / clear extra cursors\nMouse: click / drag / double click / triple click / wheel\nAlt+click: add cursor · drag borders: resize panels\nTerminal: F4 focuses editor; Ctrl+J / [Hide] hides panel; [Kill] ends shell.\nSidebar: [E] Explorer / [S] Search / [G] Git; Ctrl+B hides.\nExplorer: click filter or press /; Esc clears; Down selects results.\nGit sidebar: s stage · u unstage · d selected diff · D staged diff · c commit\nModal input: Ctrl+U clears · Up/Down choose · Enter accepts\nAll actions are accessible through the command palette.\n"
 	a.showText("Keyboard Shortcuts", s)
 }
 func (a *App) nextTab(dir int) {
@@ -240,6 +249,10 @@ func (a *App) paste(s string) {
 	}
 	if a.focus == "filter" {
 		a.insertTreeQuery(s)
+		return
+	}
+	if a.focus == "searchInput" {
+		a.insertSearchQuery(s)
 		return
 	}
 	if a.focus == "editor" && a.view().Insert(s) {

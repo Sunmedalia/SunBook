@@ -43,14 +43,19 @@ func (a *App) put(x, y, width int, s string, style tcell.Style) {
 func (a *App) fill(r rect, style tcell.Style) { a.screen.FillArea(r.X, r.Y, r.W, r.H, ' ', style) }
 func (a *App) layout() {
 	w, h := a.screen.Size()
+	rail := 0
+	if w >= 40 {
+		rail = 5
+	}
+	a.activityRect = rect{0, 1, rail, max(0, h-3)}
 	side := 0
-	if a.sidebar && w >= 70 {
+	if a.sidebar && w >= 60 {
 		side = min(a.sidebarWidth, w/3)
 	}
-	a.sideRect = rect{0, 1, side, max(0, h-3)}
-	start := 0
+	a.sideRect = rect{rail, 1, side, max(0, h-3)}
+	start := rail
 	if side > 0 {
-		start = side + 1
+		start += side + 1
 	}
 	width := max(0, w-start)
 	bottom := max(3, h-2)
@@ -71,10 +76,10 @@ func (a *App) layout() {
 	if a.rects[1].W == 0 {
 		a.active = 0
 	}
-	if (a.focus == "tree" || a.focus == "filter") && side == 0 {
+	if sidebarFocus(a.focus) && side == 0 {
 		a.focus = "editor"
 	}
-	if a.panelRect.H == 0 && (a.focus == "terminal" || a.focus == "git" || a.focus == "problems") {
+	if a.panelRect.H == 0 && (a.focus == "terminal" || a.focus == "problems") {
 		a.focus = "editor"
 	}
 }
@@ -85,6 +90,8 @@ func (a *App) draw() {
 	a.screen.HideCursor()
 	a.buttons = nil
 	a.treeFilterRect = rect{}
+	a.searchInputRect = rect{}
+	a.sideHits = nil
 	if w < 24 || h < 7 {
 		a.put(0, 0, w, "SunBook — enlarge terminal", a.accent)
 		a.screen.Show()
@@ -92,10 +99,11 @@ func (a *App) draw() {
 	}
 	a.fill(rect{0, 0, w, 1}, a.chrome)
 	a.drawToolbar()
+	a.drawActivityBar()
 	if a.sideRect.W > 0 {
-		a.drawTree()
+		a.drawSidebar()
 		for y := 1; y < h-2; y++ {
-			a.put(a.sideRect.W, y, 1, "│", a.muted)
+			a.put(a.sideRect.X+a.sideRect.W, y, 1, "│", a.muted)
 		}
 	}
 	start := a.rects[0].X
@@ -189,12 +197,12 @@ func (a *App) draw() {
 func (a *App) drawTree() {
 	r := a.sideRect
 	a.fill(r, a.chrome)
-	a.put(1, r.Y, min(9, r.W-2), "EXPLORER", a.chrome.Foreground(tcell.GetColor("#91a2b9")).Bold(true))
+	a.put(r.X+1, r.Y, min(9, r.W-2), "EXPLORER", a.chrome.Foreground(tcell.GetColor("#91a2b9")).Bold(true))
 	if r.W >= 20 {
-		a.drawButton(r.W-8, r.Y, "+", "file.new", "New file (Ctrl+N)", false)
-		a.drawButton(r.W-4, r.Y, "R", "explorer.refresh", "Refresh Explorer", false)
+		a.drawButton(r.X+r.W-8, r.Y, "+", "file.new", "New file (Ctrl+N)", false)
+		a.drawButton(r.X+r.W-4, r.Y, "R", "explorer.refresh", "Refresh Explorer", false)
 	}
-	a.put(1, r.Y+1, r.W-2, filepath.Base(a.root), a.chrome.Bold(true))
+	a.put(r.X+1, r.Y+1, r.W-2, filepath.Base(a.root), a.chrome.Bold(true))
 	a.treeFilterRect = rect{r.X + 1, r.Y + 2, max(1, r.W-6), 1}
 	field := a.treeFilterRect
 	fieldStyle := a.base
@@ -232,7 +240,7 @@ func (a *App) drawTree() {
 		if a.treeIndexLoading {
 			label = "Searching files…"
 		}
-		a.put(1, r.Y+3, r.W-2, label, a.muted)
+		a.put(r.X+1, r.Y+3, r.W-2, label, a.muted)
 	}
 	for i := 0; i < available && i+a.treeTop < len(a.tree); i++ {
 		idx := i + a.treeTop
@@ -253,7 +261,7 @@ func (a *App) drawTree() {
 			style = a.selected
 			a.fill(rect{r.X, r.Y + 3 + i, r.W, 1}, style)
 		}
-		a.put(1, r.Y+3+i, r.W-2, label, style)
+		a.put(r.X+1, r.Y+3+i, r.W-2, label, style)
 	}
 }
 func (a *App) drawEditor(group int) {
@@ -427,7 +435,7 @@ func (a *App) drawPanel() {
 		a.drawButton(right, r.Y-1, "Kill", "terminal.kill", "End the shell session and close its panel", false)
 	}
 	x := r.X + 1
-	for _, v := range []struct{ name, id string }{{"Problems", "view.problems"}, {"Git", "view.git"}, {"Terminal", "view.showTerminal"}} {
+	for _, v := range []struct{ name, id string }{{"Problems", "view.problems"}, {"Terminal", "view.showTerminal"}} {
 		width := len(v.name) + 2
 		if x+width >= right {
 			continue
@@ -440,8 +448,6 @@ func (a *App) drawPanel() {
 	switch a.panel {
 	case "Terminal":
 		a.drawTerminal()
-	case "Git":
-		a.drawGit()
 	case "Problems":
 		a.drawProblems()
 	}
@@ -494,36 +500,6 @@ func (a *App) drawTerminal() {
 	}
 }
 
-func (a *App) drawGit() {
-	r := a.panelRect
-	if a.gitError != "" {
-		a.put(r.X+1, r.Y, r.W-2, a.gitError, a.muted)
-		return
-	}
-	a.put(r.X+1, r.Y, r.W-2, "s Stage · u Unstage · d Diff · D Staged diff · c Commit", a.muted)
-	h := max(1, r.H-1)
-	if a.focus == "git" {
-		if a.gitSelected < a.gitTop {
-			a.gitTop = a.gitSelected
-		}
-		if a.gitSelected >= a.gitTop+h {
-			a.gitTop = a.gitSelected - h + 1
-		}
-	}
-	if len(a.git.Files) == 0 {
-		a.put(r.X+1, r.Y+2, r.W-2, "Working tree clean", a.accent)
-	}
-	for i := 0; i < h && i+a.gitTop < len(a.git.Files); i++ {
-		idx := i + a.gitTop
-		f := a.git.Files[idx]
-		style := a.base
-		if idx == a.gitSelected {
-			style = a.selected
-			a.fill(rect{r.X, r.Y + 1 + i, r.W, 1}, style)
-		}
-		a.put(r.X+1, r.Y+1+i, r.W-2, f.Index+f.Worktree+"  "+f.Path, style)
-	}
-}
 func (a *App) problems() []item {
 	var items []item
 	uris := make([]string, 0, len(a.diagnostics))
