@@ -1,0 +1,678 @@
+package ui
+
+import (
+	"fmt"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/gdamore/tcell/v3"
+	"github.com/rivo/uniseg"
+	"sunbook/internal/editor"
+	"sunbook/internal/lsp"
+	"sunbook/internal/text"
+)
+
+func (a *App) put(x, y, width int, s string, style tcell.Style) {
+	if width <= 0 {
+		return
+	}
+	g := uniseg.NewGraphemes(s)
+	pos := 0
+	for g.Next() {
+		str := g.Str()
+		if str == "\t" {
+			str = " "
+		}
+		for _, r := range str {
+			if r < 32 || r == 127 {
+				str = " "
+				break
+			}
+		}
+		w := max(1, g.Width())
+		if pos+w > width {
+			break
+		}
+		a.screen.Put(x+pos, y, str, style)
+		pos += w
+	}
+}
+func (a *App) fill(r rect, style tcell.Style) { a.screen.FillArea(r.X, r.Y, r.W, r.H, ' ', style) }
+func (a *App) layout() {
+	w, h := a.screen.Size()
+	side := 0
+	if a.sidebar && w >= 70 {
+		side = min(a.sidebarWidth, w/3)
+	}
+	a.sideRect = rect{0, 1, side, max(0, h-3)}
+	start := 0
+	if side > 0 {
+		start = side + 1
+	}
+	width := max(0, w-start)
+	bottom := max(3, h-2)
+	a.panelRect = rect{}
+	if a.panelVisible && h >= 14 {
+		ph := max(3, min(a.panelHeight, h-9))
+		a.panelRect = rect{start, h - 2 - ph, width, ph}
+		bottom = a.panelRect.Y - 1
+	}
+	height := max(0, bottom-3)
+	a.rects[0] = rect{start, 3, width, height}
+	a.rects[1] = rect{}
+	if a.split && width >= 30 {
+		left := max(12, min(width-13, int(float64(width)*a.splitRatio)))
+		a.rects[0].W = left
+		a.rects[1] = rect{start + left + 1, 3, width - left - 1, height}
+	}
+	if a.rects[1].W == 0 {
+		a.active = 0
+	}
+	if (a.focus == "tree" || a.focus == "filter") && side == 0 {
+		a.focus = "editor"
+	}
+	if a.panelRect.H == 0 && (a.focus == "terminal" || a.focus == "git" || a.focus == "problems") {
+		a.focus = "editor"
+	}
+}
+func (a *App) draw() {
+	a.layout()
+	w, h := a.screen.Size()
+	a.screen.Clear()
+	a.screen.HideCursor()
+	a.buttons = nil
+	a.treeFilterRect = rect{}
+	if w < 24 || h < 7 {
+		a.put(0, 0, w, "SunBook — enlarge terminal", a.accent)
+		a.screen.Show()
+		return
+	}
+	a.fill(rect{0, 0, w, 1}, a.chrome)
+	a.drawToolbar()
+	if a.sideRect.W > 0 {
+		a.drawTree()
+		for y := 1; y < h-2; y++ {
+			a.put(a.sideRect.W, y, 1, "│", a.muted)
+		}
+	}
+	start := a.rects[0].X
+	a.fill(rect{start, 1, w - start, 1}, a.chrome)
+	a.tabs = nil
+	x := start
+	// Keep the active tab visible when the tab strip overflows.
+	activeIndex := 0
+	for i, d := range a.docs {
+		if d == a.view().Doc {
+			activeIndex = i
+		}
+	}
+	first := 0
+	used := 0
+	for i := activeIndex; i >= 0; i-- {
+		tw := min(28, text.Width(a.docs[i].Name(), 4)+6)
+		if used+tw > w-start {
+			first = i + 1
+			break
+		}
+		used += tw
+	}
+	for _, d := range a.docs[first:] {
+		label := " " + d.Name()
+		if d.Dirty() {
+			label += " •"
+		}
+		label += "  × "
+		tw := min(28, text.Width(label, 4))
+		if x+tw > w {
+			break
+		}
+		style := a.chrome
+		if d == a.view().Doc {
+			style = a.base.Foreground(tcell.GetColor(a.cfg.Theme.Accent)).Bold(true)
+		}
+		a.fill(rect{x, 1, tw, 1}, style)
+		a.put(x, 1, tw, label, style)
+		a.tabs = append(a.tabs, struct {
+			rect
+			Doc *editor.Document
+		}{rect{x, 1, tw, 1}, d})
+		x += tw
+	}
+	path := a.view().Doc.Path
+	if path == "" {
+		path = "Untitled — Ctrl+S to save"
+	} else if rel, e := filepath.Rel(a.root, path); e == nil {
+		path = rel
+	}
+	a.put(start+1, 2, w-start-2, path, a.muted)
+	a.drawEditor(0)
+	if a.split && a.rects[1].W > 0 {
+		for y := 3; y < a.rects[1].Y+a.rects[1].H; y++ {
+			a.put(a.rects[1].X-1, y, 1, "│", a.muted)
+		}
+		a.drawEditor(1)
+	}
+	if a.panelRect.H > 0 {
+		a.drawPanel()
+	}
+	hint := "F1 Commands   Ctrl+P Files   Ctrl+S Save   Ctrl+Q Quit"
+	if a.hoverHint != "" {
+		hint = a.hoverHint
+	}
+	style := a.muted
+	if a.message != "" && time.Now().Before(a.messageUntil) {
+		hint = a.message
+		style = a.accent
+	}
+	a.fill(rect{0, h - 2, w, 1}, a.base)
+	a.put(1, h-2, w-2, hint, style)
+	statusStyle := a.base.Background(tcell.GetColor("#28466c")).Foreground(tcell.GetColor("#e3edff"))
+	a.fill(rect{0, h - 1, w, 1}, statusStyle)
+	branch := a.git.Branch
+	if branch == "" {
+		branch = "workspace"
+	}
+	a.put(1, h-1, w-2, "⎇ "+branch+"   "+strings.ToUpper(a.focus), statusStyle)
+	right := a.status()
+	a.put(max(0, w-text.Width(right, 4)-1), h-1, min(w, text.Width(right, 4)), right, statusStyle)
+	if a.completion != nil {
+		a.drawCompletion()
+	}
+	if a.modal != nil {
+		a.drawModal()
+	}
+	a.screen.Show()
+}
+func (a *App) drawTree() {
+	r := a.sideRect
+	a.fill(r, a.chrome)
+	a.put(1, r.Y, min(9, r.W-2), "EXPLORER", a.chrome.Foreground(tcell.GetColor("#91a2b9")).Bold(true))
+	if r.W >= 20 {
+		a.drawButton(r.W-8, r.Y, "+", "file.new", "New file (Ctrl+N)", false)
+		a.drawButton(r.W-4, r.Y, "R", "explorer.refresh", "Refresh Explorer", false)
+	}
+	a.put(1, r.Y+1, r.W-2, filepath.Base(a.root), a.chrome.Bold(true))
+	a.treeFilterRect = rect{r.X + 1, r.Y + 2, max(1, r.W-6), 1}
+	field := a.treeFilterRect
+	fieldStyle := a.base
+	if a.focus == "filter" {
+		fieldStyle = a.selected
+	}
+	a.fill(field, fieldStyle)
+	a.treeQueryOffset = 0
+	if text.Width(a.treeQuery[:a.treeQueryCursor], a.cfg.TabSize) >= field.W {
+		a.treeQueryOffset = text.Offset(a.treeQuery, text.Width(a.treeQuery[:a.treeQueryCursor], a.cfg.TabSize)-field.W+1, a.cfg.TabSize)
+	}
+	if a.treeQuery == "" && a.focus != "filter" {
+		a.put(field.X, field.Y, field.W, "Filter files (/)", a.muted)
+	} else {
+		a.put(field.X, field.Y, field.W, a.treeQuery[a.treeQueryOffset:], fieldStyle)
+	}
+	if a.treeQuery != "" {
+		a.drawButton(r.X+r.W-4, field.Y, "x", "explorer.clearFilter", "Clear Explorer filter (Esc)", false)
+	}
+	if a.focus == "filter" && a.modal == nil {
+		a.screen.ShowCursor(field.X+text.Width(a.treeQuery[a.treeQueryOffset:a.treeQueryCursor], a.cfg.TabSize), field.Y)
+	}
+	available := max(1, r.H-3)
+	if a.focus == "tree" {
+		if a.treeSelected < a.treeTop {
+			a.treeTop = a.treeSelected
+		}
+		if a.treeSelected >= a.treeTop+available {
+			a.treeTop = a.treeSelected - available + 1
+		}
+	}
+	a.treeTop = max(0, min(a.treeTop, max(0, len(a.tree)-1)))
+	if len(a.tree) == 0 && a.treeQuery != "" {
+		label := "No matching files"
+		if a.treeIndexLoading {
+			label = "Searching files…"
+		}
+		a.put(1, r.Y+3, r.W-2, label, a.muted)
+	}
+	for i := 0; i < available && i+a.treeTop < len(a.tree); i++ {
+		idx := i + a.treeTop
+		e := a.tree[idx]
+		prefix := "  "
+		if e.Dir {
+			prefix = "▸ "
+			if a.expanded[e.Path] {
+				prefix = "▾ "
+			}
+		}
+		label := strings.Repeat("  ", e.Depth) + prefix + e.Name
+		style := a.chrome
+		if e.Dir {
+			style = style.Foreground(tcell.GetColor("#91b8ef"))
+		}
+		if idx == a.treeSelected && a.focus == "tree" {
+			style = a.selected
+			a.fill(rect{r.X, r.Y + 3 + i, r.W, 1}, style)
+		}
+		a.put(1, r.Y+3+i, r.W-2, label, style)
+	}
+}
+func (a *App) drawEditor(group int) {
+	v := a.views[group]
+	r := a.rects[group]
+	if v == nil || r.W <= 0 || r.H <= 0 {
+		return
+	}
+	b := v.Doc.Buffer
+	gutter := a.gutter(v)
+	current, _ := b.Position(v.Head())
+	hl := a.highlight[v.Doc]
+	if hl.Version != b.Version {
+		hl.Spans = nil
+	}
+	diags := a.diagnostics[lsp.URI(v.Doc.Path)].Diagnostics
+	matchA, matchB := matchingBrackets(b.String(), v.Head())
+	for dy := 0; dy < r.H; dy++ {
+		row := v.Top + dy
+		y := r.Y + dy
+		if row >= b.LineCount() {
+			a.put(r.X, y, gutter, "  ~", a.muted)
+			continue
+		}
+		lineStyle := a.base
+		if group == a.active && row == current {
+			lineStyle = lineStyle.Background(tcell.GetColor("#1d2431"))
+			a.fill(rect{r.X, y, r.W, 1}, lineStyle)
+		}
+		numberStyle := a.muted
+		if row == current && group == a.active {
+			numberStyle = a.accent
+		}
+		a.put(r.X, y, gutter-1, fmt.Sprintf("%*d", gutter-2, row+1), numberStyle)
+		for _, d := range diags {
+			if d.Range.Start.Line == row {
+				style := a.base.Foreground(tcell.GetColor("#f08080"))
+				a.put(r.X+gutter-1, y, 1, "!", style)
+				break
+			}
+		}
+		line := b.Line(row)
+		offset := b.LineStart(row)
+		col := 0
+		g := uniseg.NewGraphemes(line)
+		spanIdx := sort.Search(len(hl.Spans), func(i int) bool { return hl.Spans[i].End > offset })
+		for g.Next() {
+			lo, hi := g.Positions()
+			p := offset + lo
+			str := g.Str()
+			gw := max(1, g.Width())
+			tab := str == "\t"
+			if tab {
+				gw = a.cfg.TabSize - col%a.cfg.TabSize
+			}
+			screenX := r.X + gutter + col - v.Left
+			style := lineStyle
+			for spanIdx < len(hl.Spans) && hl.Spans[spanIdx].End <= p {
+				spanIdx++
+			}
+			if spanIdx < len(hl.Spans) && hl.Spans[spanIdx].Start <= p {
+				style = hl.Spans[spanIdx].Style
+				if row == current && group == a.active {
+					style = style.Background(tcell.GetColor("#1d2431"))
+				}
+			}
+			for _, diag := range diags {
+				if row < diag.Range.Start.Line || row > diag.Range.End.Line {
+					continue
+				}
+				start := lsp.Offset(b, diag.Range.Start)
+				end := lsp.Offset(b, diag.Range.End)
+				if p >= start && p < end {
+					style = style.Underline(true)
+				}
+			}
+			if p == matchA || p == matchB {
+				style = style.Background(tcell.GetColor("#395065")).Bold(true)
+			}
+			for _, sel := range v.Selections {
+				loSel, z := sel.Range()
+				if p < z && offset+hi > loSel {
+					style = style.Background(tcell.GetColor("#344d78"))
+				}
+				if sel.Head == p && (group != a.active || a.focus != "editor" || sel.Head != v.Head()) {
+					style = style.Reverse(true)
+				}
+			}
+			if tab {
+				for dx := 0; dx < gw; dx++ {
+					xx := screenX + dx
+					if xx >= r.X+gutter && xx < r.X+r.W {
+						a.put(xx, y, 1, " ", style)
+					}
+				}
+			} else if screenX >= r.X+gutter && screenX+gw <= r.X+r.W {
+				a.put(screenX, y, gw, str, style)
+			}
+			col += gw
+			if screenX >= r.X+r.W {
+				break
+			}
+		}
+		end := b.LineEnd(row)
+		for _, sel := range v.Selections {
+			loSel, z := sel.Range()
+			if loSel <= end && z > end {
+				xx := r.X + gutter + col - v.Left
+				if xx >= r.X+gutter && xx < r.X+r.W {
+					a.put(xx, y, 1, " ", a.selected)
+				}
+			}
+			if sel.Head == end && (len(v.Selections) > 1 || group != a.active) {
+				xx := r.X + gutter + col - v.Left
+				if xx >= r.X+gutter && xx < r.X+r.W {
+					a.put(xx, y, 1, " ", a.base.Reverse(true))
+				}
+			}
+		}
+	}
+	if group == a.active && a.focus == "editor" && a.modal == nil {
+		row, c := b.Position(v.Head())
+		x := r.X + gutter + text.Column(b.Line(row), c, a.cfg.TabSize) - v.Left
+		y := r.Y + row - v.Top
+		if x >= r.X+gutter && x < r.X+r.W && y >= r.Y && y < r.Y+r.H {
+			a.screen.ShowCursor(x, y)
+		}
+	}
+}
+func matchingBrackets(s string, head int) (int, int) {
+	if len(s) == 0 {
+		return -1, -1
+	}
+	p := head
+	if p >= len(s) || !strings.ContainsRune("()[]{}", rune(s[p])) {
+		p = head - 1
+	}
+	if p < 0 || p >= len(s) {
+		return -1, -1
+	}
+	pairs := map[byte]byte{'(': ')', '[': ']', '{': '}', ')': '(', ']': '[', '}': '{'}
+	target, ok := pairs[s[p]]
+	if !ok {
+		return -1, -1
+	}
+	dir := 1
+	if strings.ContainsRune(")]}", rune(s[p])) {
+		dir = -1
+	}
+	depth := 0
+	for q, steps := p, 0; q >= 0 && q < len(s) && steps < 10000; q, steps = q+dir, steps+1 {
+		if s[q] == s[p] {
+			depth++
+		}
+		if s[q] == target {
+			depth--
+			if depth == 0 {
+				return p, q
+			}
+		}
+	}
+	return -1, -1
+}
+func (a *App) drawPanel() {
+	r := a.panelRect
+	a.fill(rect{r.X, r.Y - 1, r.W, 1}, a.chrome)
+	right := r.X + r.W - 7
+	a.drawButton(right, r.Y-1, "Hide", "view.hidePanel", "Hide panel; keep shell running (Ctrl+J)", false)
+	if a.panel == "Terminal" && a.term != nil && r.W >= 48 {
+		right -= 7
+		a.drawButton(right, r.Y-1, "Kill", "terminal.kill", "End the shell session and close its panel", false)
+	}
+	x := r.X + 1
+	for _, v := range []struct{ name, id string }{{"Problems", "view.problems"}, {"Git", "view.git"}, {"Terminal", "view.showTerminal"}} {
+		width := len(v.name) + 2
+		if x+width >= right {
+			continue
+		}
+		x += a.drawButton(x, r.Y-1, v.name, v.id, "Show "+v.name, a.panel == v.name) + 1
+	}
+	if right-x > 22 {
+		a.put(x+1, r.Y-1, right-x-2, "F4 Focus · Ctrl+J Hide", a.muted)
+	}
+	switch a.panel {
+	case "Terminal":
+		a.drawTerminal()
+	case "Git":
+		a.drawGit()
+	case "Problems":
+		a.drawProblems()
+	}
+}
+func (a *App) drawTerminal() {
+	r := a.panelRect
+	if a.term == nil {
+		a.put(r.X+1, r.Y+1, r.W-2, "Press F4 to start a shell in this workspace.", a.muted)
+		return
+	}
+	_ = a.term.Resize(max(1, r.W), max(1, r.H))
+	vt := a.term.VT
+	a.termOffset = max(0, min(a.termOffset, vt.ScrollbackLen()))
+	for y := 0; y < r.H; y++ {
+		for x := 0; x < r.W; x++ {
+			var cellContent string
+			style := a.base
+			row := y - a.termOffset
+			cell := vt.CellAt(x, row)
+			if row < 0 {
+				cell = vt.ScrollbackCellAt(x, vt.ScrollbackLen()+row)
+			}
+			if cell == nil {
+				continue
+			}
+			if cell.Width == 0 {
+				continue
+			}
+			cellContent = cell.Content
+			if cellContent == "" {
+				cellContent = " "
+			}
+			if cell.Style.Fg != nil {
+				style = style.Foreground(tcell.FromImageColor(cell.Style.Fg))
+			}
+			if cell.Style.Bg != nil {
+				style = style.Background(tcell.FromImageColor(cell.Style.Bg))
+			}
+			style = style.Bold(cell.Style.Attrs&uv.AttrBold != 0).Italic(cell.Style.Attrs&uv.AttrItalic != 0).Reverse(cell.Style.Attrs&uv.AttrReverse != 0)
+			if cell.Style.Underline != 0 {
+				style = style.Underline(true)
+			}
+			a.put(r.X+x, r.Y+y, cell.Width, cellContent, style)
+			x += max(0, cell.Width-1)
+		}
+	}
+	if a.focus == "terminal" && a.modal == nil && !a.termExited && a.termOffset == 0 && !vt.CursorHidden() {
+		p := vt.CursorPosition()
+		a.screen.ShowCursor(r.X+p.X, r.Y+p.Y)
+	}
+}
+
+func (a *App) drawGit() {
+	r := a.panelRect
+	if a.gitError != "" {
+		a.put(r.X+1, r.Y, r.W-2, a.gitError, a.muted)
+		return
+	}
+	a.put(r.X+1, r.Y, r.W-2, "s Stage · u Unstage · d Diff · D Staged diff · c Commit", a.muted)
+	h := max(1, r.H-1)
+	if a.focus == "git" {
+		if a.gitSelected < a.gitTop {
+			a.gitTop = a.gitSelected
+		}
+		if a.gitSelected >= a.gitTop+h {
+			a.gitTop = a.gitSelected - h + 1
+		}
+	}
+	if len(a.git.Files) == 0 {
+		a.put(r.X+1, r.Y+2, r.W-2, "Working tree clean", a.accent)
+	}
+	for i := 0; i < h && i+a.gitTop < len(a.git.Files); i++ {
+		idx := i + a.gitTop
+		f := a.git.Files[idx]
+		style := a.base
+		if idx == a.gitSelected {
+			style = a.selected
+			a.fill(rect{r.X, r.Y + 1 + i, r.W, 1}, style)
+		}
+		a.put(r.X+1, r.Y+1+i, r.W-2, f.Index+f.Worktree+"  "+f.Path, style)
+	}
+}
+func (a *App) problems() []item {
+	var items []item
+	uris := make([]string, 0, len(a.diagnostics))
+	for uri := range a.diagnostics {
+		uris = append(uris, uri)
+	}
+	sort.Strings(uris)
+	for _, uri := range uris {
+		for _, d := range a.diagnostics[uri].Diagnostics {
+			path := lsp.Path(uri)
+			diag := d
+			rel, _ := filepath.Rel(a.root, path)
+			severity := "error"
+			if d.Severity == 2 {
+				severity = "warning"
+			} else if d.Severity >= 3 {
+				severity = "info"
+			}
+			items = append(items, item{Label: fmt.Sprintf("%s  %s:%d:%d  %s", severity, rel, d.Range.Start.Line+1, d.Range.Start.Character+1, d.Message), Action: func() {
+				if a.open(path) == nil {
+					a.view().Set(lsp.Offset(a.view().Doc.Buffer, diag.Range.Start), false)
+					a.reveal()
+				}
+			}})
+		}
+	}
+	return items
+}
+func (a *App) drawProblems() {
+	r := a.panelRect
+	items := a.problems()
+	if len(items) == 0 {
+		a.put(r.X+1, r.Y+1, r.W-2, "No diagnostics. Language server status is available via Help: Dependency Check.", a.muted)
+		return
+	}
+	if a.focus == "problems" {
+		if a.problemSelected < a.problemTop {
+			a.problemTop = a.problemSelected
+		}
+		if a.problemSelected >= a.problemTop+r.H {
+			a.problemTop = a.problemSelected - r.H + 1
+		}
+	}
+	for i := 0; i < r.H && i+a.problemTop < len(items); i++ {
+		idx := i + a.problemTop
+		style := a.base
+		if idx == a.problemSelected {
+			style = a.selected
+			a.fill(rect{r.X, r.Y + i, r.W, 1}, style)
+		}
+		a.put(r.X+1, r.Y+i, r.W-2, items[idx].Label, style)
+	}
+}
+func (a *App) drawCompletion() {
+	c := a.completion
+	if c == nil || len(c.Items) == 0 {
+		return
+	}
+	v := a.view()
+	r := a.rects[a.active]
+	row, col := v.Doc.Buffer.Position(v.Head())
+	w, h := a.screen.Size()
+	width := min(60, w-2)
+	height := min(8, len(c.Items))
+	x := min(r.X+a.gutter(v)+text.Column(v.Doc.Buffer.Line(row), col, a.cfg.TabSize)-v.Left, w-width-1)
+	x = max(0, x)
+	y := r.Y + row - v.Top + 1
+	if y+height >= h-2 {
+		y = max(1, y-height-1)
+	}
+	top := max(0, c.Selected-height+1)
+	for i := 0; i < height; i++ {
+		it := c.Items[top+i]
+		style := a.chrome
+		if top+i == c.Selected {
+			style = a.selected
+		}
+		a.fill(rect{x, y + i, width, 1}, style)
+		a.put(x+1, y+i, width-2, it.Label+"  "+it.Detail, style)
+	}
+}
+func (a *App) drawModal() {
+	m := a.modal
+	w, h := a.screen.Size()
+	width := max(1, min(96, w-4))
+	height := min(h-4, 20)
+	if height < 3 {
+		height = h
+	}
+	x := (w - width) / 2
+	y := max(1, (h-height)/3)
+	a.modalRect = rect{x, y, width, height}
+	a.fill(a.modalRect, a.chrome)
+	a.put(x+1, y, width-2, " "+m.Title+" ", a.accent.Bold(true))
+	contentY := y + 2
+	if m.InputEnabled {
+		a.fill(rect{x + 1, contentY, width - 2, 1}, a.base)
+		inputWidth := max(1, width-4)
+		offset := 0
+		if text.Width(m.Input[:m.Cursor], a.cfg.TabSize) >= inputWidth {
+			offset = text.Offset(m.Input, text.Width(m.Input[:m.Cursor], a.cfg.TabSize)-inputWidth+1, a.cfg.TabSize)
+		}
+		a.put(x+2, contentY, inputWidth, m.Input[offset:], a.base)
+		a.screen.ShowCursor(x+2+text.Width(m.Input[offset:m.Cursor], a.cfg.TabSize), contentY)
+		contentY += 2
+	} else {
+		a.screen.HideCursor()
+	}
+	if len(m.Body) > 0 && len(m.Items) > 0 {
+		for i := 0; i < min(5, len(m.Body)) && contentY < y+height-5; i++ {
+			a.put(x+2, contentY, width-4, m.Body[i+m.BodyTop], a.muted)
+			contentY++
+		}
+		if len(m.Body) > 5 {
+			a.put(x+2, contentY, width-4, "Ctrl+↑/↓ or wheel scrolls preview", a.muted)
+			contentY++
+		}
+		contentY++
+	}
+	available := max(0, y+height-2-contentY)
+	m.ListY = contentY
+	if len(m.Visible) > 0 {
+		if m.Selected < m.Top {
+			m.Top = m.Selected
+		}
+		if m.Selected >= m.Top+available && available > 0 {
+			m.Top = m.Selected - available + 1
+		}
+		m.Top = max(0, min(m.Top, len(m.Visible)-1))
+		for i := 0; i < available && i+m.Top < len(m.Visible); i++ {
+			idx := m.Top + i
+			it := m.Visible[idx]
+			style := a.chrome
+			if idx == m.Selected {
+				style = a.selected
+				a.fill(rect{x + 1, contentY + i, width - 2, 1}, style)
+			}
+			a.put(x+2, contentY+i, width-4, it.Label, style)
+			if it.Detail != "" {
+				detailWidth := min(width/3, text.Width(it.Detail, 4))
+				a.put(x+width-detailWidth-2, contentY+i, detailWidth, it.Detail, style.Foreground(tcell.GetColor("#92a1b9")))
+			}
+		}
+	} else if len(m.Body) > 0 {
+		for i := 0; i < available && i+m.Top < len(m.Body); i++ {
+			a.put(x+2, contentY+i, width-4, m.Body[i+m.Top], a.chrome)
+		}
+	} else if m.Filter {
+		a.put(x+2, contentY, width-4, "No matches", a.muted)
+	}
+	a.put(x+1, y+height-1, width-2, m.Hint, a.muted)
+}

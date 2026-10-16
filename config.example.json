@@ -1,0 +1,19 @@
+{
+  "tabSize": 4,
+  "insertSpaces": true,
+  "theme": {
+    "background": "#171b24",
+    "foreground": "#c9d1df",
+    "accent": "#78a9ff"
+  },
+  "keybindings": {
+    "ctrl+s": "file.save",
+    "f8": "language.format",
+    "ctrl+k ctrl+o": "view.other"
+  },
+  "servers": {
+    "go": { "command": "gopls", "args": [] },
+    "python": { "command": "pyright-langserver", "args": ["--stdio"] },
+    "typescript": { "command": "typescript-language-server", "args": ["--stdio"] }
+  }
+}

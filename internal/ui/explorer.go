@@ -1,0 +1,187 @@
+package ui
+
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/gdamore/tcell/v3"
+	"sunbook/internal/text"
+)
+
+// File indexing is lazy and independent of expanded directories. Filtering must
+// find a file even if none of its ancestor directories have been expanded.
+func workspaceFiles(ctx context.Context, root string) ([]string, error) {
+	out, err := exec.CommandContext(ctx, "rg", "--files", "--null", "--hidden", "-g", "!.git", root).Output()
+	if err == nil {
+		var paths []string
+		for _, p := range strings.Split(string(out), "\x00") {
+			if p != "" {
+				paths = append(paths, p)
+			}
+		}
+		return paths, nil
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	var paths []string
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, e error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if e != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != root && (d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "vendor") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Type().IsRegular() || d.Type()&os.ModeSymlink != 0 {
+			paths = append(paths, path)
+		}
+		if len(paths) >= 20000 {
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return paths, err
+}
+func (a *App) focusTreeFilter() {
+	a.sidebar = true
+	a.focus = "filter"
+	a.treeQueryCursor = len(a.treeQuery)
+	a.completion = nil
+}
+func (a *App) setTreeQuery(s string) {
+	a.treeQuery = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(s)
+	a.treeQueryCursor = len(a.treeQuery)
+	a.treeSelected = 0
+	a.treeTop = 0
+	a.applyTreeFilter()
+	if strings.TrimSpace(a.treeQuery) != "" && !a.treeIndexReady {
+		a.loadTreeIndex()
+	}
+}
+func (a *App) insertTreeQuery(s string) {
+	p := a.treeQueryCursor
+	tail := len(a.treeQuery) - p
+	a.setTreeQuery(a.treeQuery[:p] + s + a.treeQuery[p:])
+	a.treeQueryCursor = text.Snap(a.treeQuery, len(a.treeQuery)-tail)
+}
+func (a *App) applyTreeFilter() {
+	query := strings.TrimSpace(a.treeQuery)
+	if query == "" {
+		a.tree = a.treeAll
+	} else {
+		a.tree = nil
+		if a.treeIndexReady {
+			for _, path := range a.treeFiles {
+				rel, e := filepath.Rel(a.root, path)
+				if e != nil {
+					continue
+				}
+				rel = filepath.ToSlash(rel)
+				if fuzzy(rel, query) {
+					a.tree = append(a.tree, treeEntry{Path: path, Name: rel})
+				}
+			}
+		} else {
+			for _, e := range a.treeAll {
+				if !e.Dir {
+					rel, _ := filepath.Rel(a.root, e.Path)
+					if fuzzy(filepath.ToSlash(rel), query) {
+						e.Name = filepath.ToSlash(rel)
+						e.Depth = 0
+						a.tree = append(a.tree, e)
+					}
+				}
+			}
+		}
+	}
+	a.treeSelected = max(0, min(a.treeSelected, len(a.tree)-1))
+	a.treeTop = max(0, min(a.treeTop, max(0, len(a.tree)-1)))
+}
+func (a *App) loadTreeIndex() {
+	if a.treeIndexReady || a.treeIndexLoading {
+		return
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.treeIndexCancel = cancel
+	a.treeIndexLoading = true
+	a.treeIndexSeq++
+	seq := a.treeIndexSeq
+	root := a.root
+	go func() {
+		defer cancel()
+		files, err := workspaceFiles(ctx, root)
+		sort.Strings(files)
+		a.post(func() {
+			if seq != a.treeIndexSeq || root != a.root {
+				return
+			}
+			a.treeIndexLoading = false
+			if err != nil {
+				a.showError(err)
+				return
+			}
+			a.treeFiles = files
+			a.treeIndexReady = true
+			a.applyTreeFilter()
+		})
+	}()
+}
+func (a *App) invalidateTreeIndex() {
+	if a.treeIndexCancel != nil {
+		a.treeIndexCancel()
+	}
+	a.treeIndexSeq++
+	a.treeIndexLoading = false
+	a.treeIndexReady = false
+	if strings.TrimSpace(a.treeQuery) != "" {
+		a.loadTreeIndex()
+	}
+}
+func (a *App) treeFilterKey(e *tcell.EventKey, name string) {
+	switch name {
+	case "escape":
+		a.setTreeQuery("")
+		a.focus = "tree"
+	case "enter":
+		a.focus = "tree"
+		a.toggleTree()
+	case "down", "up":
+		a.focus = "tree"
+	case "left":
+		a.treeQueryCursor = text.Prev(a.treeQuery, a.treeQueryCursor)
+	case "right":
+		a.treeQueryCursor = text.Next(a.treeQuery, a.treeQueryCursor)
+	case "home", "ctrl+a":
+		a.treeQueryCursor = 0
+	case "end", "ctrl+e":
+		a.treeQueryCursor = len(a.treeQuery)
+	case "ctrl+u":
+		a.setTreeQuery("")
+	case "ctrl+v":
+		a.readClipboard()
+	case "backspace", "backspace2":
+		p := text.Prev(a.treeQuery, a.treeQueryCursor)
+		head := a.treeQueryCursor
+		a.setTreeQuery(a.treeQuery[:p] + a.treeQuery[head:])
+		a.treeQueryCursor = p
+	case "delete":
+		head := a.treeQueryCursor
+		p := text.Next(a.treeQuery, head)
+		a.setTreeQuery(a.treeQuery[:head] + a.treeQuery[p:])
+		a.treeQueryCursor = head
+	default:
+		if e.Str() != "" && e.Modifiers()&(tcell.ModCtrl|tcell.ModAlt|tcell.ModMeta) == 0 {
+			a.insertTreeQuery(e.Str())
+		}
+	}
+}
