@@ -132,10 +132,11 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 		}
 		for _, hit := range a.sideHits {
 			if hit.contains(x, y) && hit.Index < len(a.searchResults) {
-				a.hoverHint = a.searchResults[hit.Index].Path
+				a.hoverHint = a.searchResults[hit.Index].Path + " · click to preview · double-click to keep open"
 				if fresh {
 					a.searchSelected = hit.Index
-					a.openSearchResult()
+					keep := a.doubleFileClick("search", a.searchResults[hit.Index].Path, x, y)
+					a.openSearchResultMode(!keep)
 				}
 				return
 			}
@@ -198,7 +199,13 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 			idx := a.treeTop + y - a.sideRect.Y - 3
 			if idx >= 0 && idx < len(a.tree) {
 				a.treeSelected = idx
-				a.toggleTree()
+				entry := a.tree[idx]
+				if entry.Dir {
+					a.toggleTree()
+				} else {
+					keep := a.doubleFileClick("explorer", entry.Path, x, y)
+					a.showError(a.openFile(entry.Path, !keep))
+				}
 			}
 		}
 	}

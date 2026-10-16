@@ -182,11 +182,14 @@ func (a *App) moveSearchSelection(delta int) {
 	revealList(&a.searchTop, a.searchRows(), a.searchSelected, max(1, a.sideRect.Y+a.sideRect.H-a.searchBodyStart()))
 }
 func (a *App) openSearchResult() {
+	a.openSearchResultMode(false)
+}
+func (a *App) openSearchResultMode(preview bool) {
 	if a.searchSelected < 0 || a.searchSelected >= len(a.searchResults) {
 		return
 	}
 	h := a.searchResults[a.searchSelected]
-	if err := a.open(h.Path); err != nil {
+	if err := a.openFile(h.Path, preview); err != nil {
 		a.showError(err)
 		return
 	}

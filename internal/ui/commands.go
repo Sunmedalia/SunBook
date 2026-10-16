@@ -200,6 +200,7 @@ Double / triple click    Select word / line
 Alt+click                Add cursor
 Mouse wheel              Scroll; drag borders to resize panes
 Drag file tab            Reorder tabs; drop on editor edge to split
+Double-click file tab    Keep preview open (italic filename = preview)
 
 OPEN / QUICK OPEN
 Ctrl+L                   Edit folder path in Open
@@ -211,6 +212,8 @@ file:line:column         Jump when opening, e.g. main.go:20:5
 Esc                      Cancel path edit, then close the picker
 
 EXPLORER & SEARCH
+Single / double click    Preview file / keep file open
+Edit / save preview      Keep file open automatically
 / or Ctrl+F (Explorer)   Focus the filename filter
 Up / Down + Enter        Select and open a result
 Esc (Explorer filter)    Clear the filter

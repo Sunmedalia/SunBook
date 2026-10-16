@@ -86,6 +86,7 @@ type App struct {
 	cancel                                                context.CancelFunc
 	updates                                               chan func()
 	docs                                                  []*editor.Document
+	preview                                               *editor.Document
 	views                                                 [2]*editor.View
 	viewCache                                             [2]map[*editor.Document]*editor.View
 	active                                                int
@@ -194,6 +195,8 @@ type App struct {
 	lastButtons                           tcell.ButtonMask
 	clickTime                             time.Time
 	clickX, clickY, clickCount            int
+	mouseClicks                           uint64
+	fileClick                             fileClick
 	base, muted, accent, chrome, selected tcell.Style
 	colors                                palette
 }
@@ -361,6 +364,9 @@ func (a *App) addDocument(d *editor.Document) {
 	a.scheduleHighlight(d)
 }
 func (a *App) activate(d *editor.Document) {
+	if a.split && a.views[1-a.active] != nil && a.views[1-a.active].Doc == d {
+		a.keepDocument(d)
+	}
 	a.rememberFile(d.Path)
 	a.gitViewSeq++
 	if a.comparison != nil {
@@ -376,6 +382,9 @@ func (a *App) activate(d *editor.Document) {
 	a.completion = nil
 }
 func (a *App) open(path string) error {
+	return a.openFile(path, false)
+}
+func (a *App) openFile(path string, preview bool) error {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(a.root, path)
 	}
@@ -385,6 +394,9 @@ func (a *App) open(path string) error {
 	}
 	for _, d := range a.docs {
 		if d.Path == path {
+			if !preview {
+				a.keepDocument(d)
+			}
 			a.activate(d)
 			return nil
 		}
@@ -393,11 +405,37 @@ func (a *App) open(path string) error {
 	if e != nil {
 		return e
 	}
+	// Read successfully before replacing a preview. A failed open must leave
+	// the current document and its selection intact.
+	old, slot := a.preview, len(a.docs)
+	if preview && old != nil {
+		if old.Dirty() || a.split && a.views[1-a.active] != nil && a.views[1-a.active].Doc == old {
+			a.keepDocument(old)
+			old = nil
+		} else {
+			for i, doc := range a.docs {
+				if doc == old {
+					slot = i
+					break
+				}
+			}
+		}
+	}
 	a.addDocument(d)
+	if preview {
+		if old != nil {
+			// The new document is already active, so closing the clean preview
+			// neither prompts nor creates an intermediate untitled document.
+			a.closeDocument(old)
+			a.reorderDocument(d, slot)
+		}
+		a.preview = d
+	}
 	a.startLanguage(d)
 	return nil
 }
 func (a *App) changed(d *editor.Document) {
+	a.keepDocument(d)
 	for _, cache := range a.viewCache {
 		if v := cache[d]; v != nil {
 			if v != a.view() {
@@ -456,6 +494,7 @@ func (a *App) splitEditor() {
 		a.split = false
 		a.active = 0
 	} else {
+		a.keepDocument(a.views[0].Doc)
 		a.split = true
 		a.active = 1
 		a.activate(a.views[0].Doc)
@@ -643,6 +682,7 @@ func (a *App) saveForce(d *editor.Document, done func()) {
 	}
 }
 func (a *App) saved(d *editor.Document) {
+	a.keepDocument(d)
 	a.rememberFile(d.Path)
 	a.notify("Saved " + d.Name())
 	if c := a.opened[d]; c != nil {
@@ -713,6 +753,7 @@ func (a *App) closeDocument(d *editor.Document) {
 	comparison := a.comparison
 	wasComparing := a.comparing()
 	a.confirmDocument(d, func() {
+		a.keepDocument(d)
 		for i, v := range a.docs {
 			if v == d {
 				a.docs = append(a.docs[:i], a.docs[i+1:]...)
@@ -833,6 +874,8 @@ func (a *App) switchWorkspace() {
 			a.treeTop = 0
 			a.treeSelected = 0
 			a.docs = nil
+			a.preview = nil
+			a.fileClick = fileClick{}
 			a.views = [2]*editor.View{}
 			for j := range a.viewCache {
 				a.viewCache[j] = map[*editor.Document]*editor.View{}

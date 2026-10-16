@@ -78,6 +78,7 @@ func keyName(e *tcell.EventKey) string {
 	return prefix + name
 }
 func (a *App) key(e *tcell.EventKey) {
+	a.fileClick = fileClick{}
 	name := keyName(e)
 	if a.tabDrag != nil && name == "escape" {
 		a.tabDrag = nil
@@ -702,6 +703,12 @@ func (a *App) mouse(e *tcell.EventMouse) {
 	previous := a.lastButtons
 	press := buttons&tcell.Button1 != 0
 	fresh := press && a.lastButtons&tcell.Button1 == 0
+	if fresh {
+		a.mouseClicks++
+	}
+	if buttons&(tcell.WheelUp|tcell.WheelDown) != 0 {
+		a.fileClick = fileClick{}
+	}
 	wheel := 0
 	if buttons&tcell.WheelUp != 0 {
 		wheel = -3
@@ -825,9 +832,18 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		a.sidebarMouse(e, fresh, wheel)
 		return
 	}
-	if y == 1 && fresh {
+	if y == 1 {
 		for _, tab := range a.tabs {
 			if tab.contains(x, y) {
+				if tab.Doc != nil {
+					a.hoverHint = tab.Doc.Path
+					if tab.Doc == a.preview {
+						a.hoverHint += " · Preview · double-click to keep open"
+					}
+				}
+				if !fresh {
+					return
+				}
 				if tab.Doc == nil {
 					if x >= tab.X+tab.W-2 {
 						a.closeComparison()
@@ -841,6 +857,9 @@ func (a *App) mouse(e *tcell.EventMouse) {
 					a.closeDocument(tab.Doc)
 				} else {
 					previousDoc := a.view().Doc
+					if a.doubleFileClick("tab", tab.Doc.Path, x, y) {
+						a.keepDocument(tab.Doc)
+					}
 					a.activate(tab.Doc)
 					a.tabDrag = &tabDragState{Doc: tab.Doc, Previous: previousDoc, SourceGroup: a.active, StartX: x, StartY: y, Slot: -1, Group: -1}
 				}

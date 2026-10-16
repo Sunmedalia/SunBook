@@ -62,6 +62,11 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   Vue / Svelte, HTML / XML, CSS / Sass / Less, and JSON / YAML / TOML also
   have separate marks. Matching is case-insensitive; TypeScript declarations
   use `dTS`. Icons use standard characters, without a patched font.
+- Single-click a file in Explorer or a Search result to preview it in an italic
+  tab. Selecting another file reuses that preview tab. Double-click the file or
+  its tab to keep it open; editing, saving, or dragging the tab also keeps it.
+  Enter, Open / Quick Open, and opening in a split keep files open immediately.
+  Existing open files and unsaved changes are preserved when browsing previews.
 - Click, drag, double-click a word, triple-click a line, scroll with the wheel.
 - Alt+click adds a cursor. Ctrl+D selects a word and then its next occurrence.
 - Shared documents in splits; independent selections and scroll positions.

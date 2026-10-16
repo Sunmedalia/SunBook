@@ -81,7 +81,7 @@ func (a *App) drawTabs(start, width int) {
 			a.put(x, 1, 1, "▎", a.accent)
 		}
 		n := a.drawFileIcon(x+2, 1, max(0, tw-6), path(d), false, false, style)
-		a.put(x+2+n, 1, tw-6-n, fitLabel(name(d), tw-6-n), style)
+		a.put(x+2+n, 1, tw-6-n, fitLabel(name(d), tw-6-n), style.Italic(d != nil && d == a.preview))
 		if d != nil && d.Dirty() {
 			a.put(x+tw-4, 1, 1, "•", style.Foreground(a.accent.GetForeground()))
 		}
@@ -117,6 +117,10 @@ func (a *App) drawStatus(width, y int) {
 	rightX := max(1, width-text.Width(right, 4)-1)
 	focus := strings.ToUpper(a.focus)
 	switch a.focus {
+	case "editor":
+		if a.preview != nil && a.view().Doc == a.preview {
+			focus = "PREVIEW"
+		}
 	case "gitMessage":
 		focus = "COMMIT"
 	case "gitFilter":

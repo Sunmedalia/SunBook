@@ -101,14 +101,19 @@ def main():
             wait_for(lambda: b"KILL_unset" in received, "Kill ends shell session")
             os.write(master, b"\x0a")  # hide panel from shell focus
 
-            # Filter files in an unopened directory, then open a result.
+            # Filter files in an unopened directory, preview, then keep a result.
             received.clear()
             click(8, 4)
             paste("needle")
             wait_for(lambda: b"nested/needle.txt" in received, "Explorer filter")
             received.clear()
-            os.write(master, b"\r")
-            wait_for(lambda: b"nested sample" in received, "filtered file opens")
+            click(12, 5)
+            wait_for(lambda: b"nested sample" in received and b"PREVIEW" in received,
+                     "single click previews the filtered file")
+            received.clear()
+            click(12, 5)
+            click(12, 5)
+            wait_for(lambda: b"EDITOR" in received, "double click keeps the preview open")
 
             # Workspace Search and Git now live in persistent left sidebars.
             received.clear()
@@ -220,7 +225,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, toolbar, dock switching, tab drag, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, toolbar, dock switching, tab drag, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()

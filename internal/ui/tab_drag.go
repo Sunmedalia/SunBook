@@ -20,6 +20,8 @@ func (a *App) moveTabDrag(x, y int, pressed bool) {
 		return
 	}
 	if !d.Moving && abs(x-d.StartX)+abs(y-d.StartY) >= 2 {
+		a.keepDocument(d.Doc)
+		a.fileClick = fileClick{}
 		d.Moving = true
 	}
 	if !d.Moving {
