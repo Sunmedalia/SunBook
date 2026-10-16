@@ -38,26 +38,42 @@ func (a *App) refreshGitLog() {
 				a.gitLogError = err.Error()
 				return
 			}
-			selected := ""
-			topHash := ""
-			if a.gitLogTop > 0 && a.gitLogTop < len(a.gitLog) {
-				topHash = a.gitLog[a.gitLogTop].Hash
-			}
+			selected, topKey := "", ""
 			if a.gitLogSelected >= 0 && a.gitLogSelected < len(a.gitLog) {
 				selected = a.gitLog[a.gitLogSelected].Hash
 			}
+			oldRows := a.gitLogRows()
+			if a.gitLogTop >= 0 && a.gitLogTop < len(oldRows) {
+				topKey = a.gitLogRowKey(oldRows[a.gitLogTop])
+			}
+			firstLoad := len(a.gitLog) == 0
 			a.gitLog = revisions
 			a.gitLogError = ""
-			a.gitLogSelected = max(0, min(a.gitLogSelected, len(revisions)-1))
-			for i, r := range revisions {
-				if topHash != "" && r.Hash == topHash {
-					a.gitLogTop = i
-				}
-				if r.Hash == selected {
+			a.gitLogSelected = 0
+			for i, revision := range revisions {
+				if revision.Hash == selected {
 					a.gitLogSelected = i
 				}
 			}
-			a.gitLogTop = max(0, min(a.gitLogTop, max(0, len(revisions)-1)))
+			if a.gitLogOpen == nil {
+				a.gitLogOpen = map[string]bool{}
+			}
+			if firstLoad && len(revisions) > 0 {
+				if _, known := a.gitLogOpen[revisions[0].Hash]; !known {
+					a.gitLogOpen[revisions[0].Hash] = true
+				}
+			}
+			rows := a.gitLogRows()
+			for i, row := range rows {
+				if a.gitLogRowKey(row) == topKey {
+					a.gitLogTop = i
+					break
+				}
+			}
+			if _, index := a.selectedGitLogRow(); index < 0 {
+				a.gitLogNode = ""
+			}
+			a.gitLogTop = max(0, min(a.gitLogTop, max(0, len(rows)-1)))
 		})
 	}()
 }
@@ -79,6 +95,7 @@ func (a *App) gitHistory(file bool) {
 		a.gitLog = nil
 		a.gitLogSelected = 0
 		a.gitLogTop = 0
+		a.gitLogNode = ""
 	}
 	a.gitLogPath = path
 	a.sidebar = true
@@ -151,31 +168,7 @@ func (a *App) drawGitLog() {
 		a.put(r.X+1, r.Y, r.W-2, "No commits yet", a.chrome.Foreground(a.colors.muted))
 		return
 	}
-	for i, y := a.gitLogTop, r.Y; i < len(a.gitLog) && y < r.Y+r.H; i, y = i+1, y+2 {
-		revision := a.gitLog[i]
-		style := a.chrome
-		if a.focus == "gitLog" && i == a.gitLogSelected {
-			style = a.selected
-			a.fill(rect{r.X, y, r.W, min(2, r.Y+r.H-y)}, style)
-		}
-		hashWidth := min(7, len(revision.Hash))
-		a.put(r.X+1, y, hashWidth, revision.Hash[:hashWidth], style.Foreground(a.accent.GetForeground()))
-		a.put(r.X+hashWidth+2, y, r.W-hashWidth-3, fitLabel(revision.Subject, r.W-hashWidth-3), style)
-		if y+1 < r.Y+r.H {
-			a.put(r.X+2, y+1, r.W-3, fitLabel(revision.Author+" · "+revision.Age, r.W-3), style.Foreground(a.colors.muted))
-		}
-	}
-	a.sidebarScroll(a.gitLogRect, a.gitLogTop*2, len(a.gitLog)*2)
-}
-func (a *App) moveGitLog(delta int) {
-	a.gitLogSelected = max(0, min(a.gitLogSelected+delta, len(a.gitLog)-1))
-	visible := max(1, (a.gitLogRect.H+1)/2)
-	if a.gitLogSelected < a.gitLogTop {
-		a.gitLogTop = a.gitLogSelected
-	}
-	if a.gitLogSelected >= a.gitLogTop+visible {
-		a.gitLogTop = a.gitLogSelected - visible + 1
-	}
+	a.drawGitLogRows()
 }
 func (a *App) openGitRevision() {
 	if a.gitLogSelected < 0 || a.gitLogSelected >= len(a.gitLog) {
@@ -192,16 +185,21 @@ func (a *App) gitLogKey(e *tcell.EventKey, name string) {
 	case "down":
 		a.moveGitLog(1)
 	case "pageup":
-		a.moveGitLog(-max(1, a.gitLogRect.H/2))
+		a.moveGitLog(-max(1, a.gitLogRect.H))
 	case "pagedown":
-		a.moveGitLog(max(1, a.gitLogRect.H/2))
+		a.moveGitLog(max(1, a.gitLogRect.H))
 	case "home":
-		a.gitLogSelected = 0
+		a.gitLogSelected, a.gitLogNode = 0, ""
 		a.moveGitLog(0)
 	case "end":
-		a.gitLogSelected = len(a.gitLog) - 1
-		a.moveGitLog(0)
-	case "enter":
+		a.moveGitLog(len(a.gitLogRows()))
+	case "enter", "space", " ":
+		a.activateGitLogRow()
+	case "right":
+		a.gitLogTreeArrow(true)
+	case "left":
+		a.gitLogTreeArrow(false)
+	case "d":
 		a.openGitRevision()
 	case "tab", "shift+tab":
 		a.focus = "git"
@@ -228,18 +226,31 @@ func (a *App) gitLogMouse(x, y, wheel int, fresh bool) bool {
 	if !r.contains(x, y) {
 		return false
 	}
+	rows := a.gitLogRows()
 	if wheel != 0 {
-		a.gitLogTop = max(0, min(max(0, len(a.gitLog)-1), a.gitLogTop+wheel))
+		a.gitLogTop = max(0, min(max(0, len(rows)-1), a.gitLogTop+wheel))
 		return true
 	}
-	index := a.gitLogTop + (y-r.Y)/2
-	if index >= 0 && index < len(a.gitLog) {
-		revision := a.gitLog[index]
+	index := a.gitLogTop + y - r.Y
+	if index >= 0 && index < len(rows) {
+		row := rows[index]
+		revision := a.gitLog[row.Commit]
 		a.hoverHint = revision.Hash + " · " + revision.Subject + " · " + revision.Author + " · " + revision.Age
-		if fresh {
+		if row.Kind == "file" || row.Kind == "folder" {
+			a.hoverHint = row.Path + " · " + a.hoverHint
+			if row.File.OldPath != "" {
+				a.hoverHint = row.File.OldPath + " → " + a.hoverHint
+			}
+		} else {
+			a.hoverHint += fmt.Sprintf(" · %d files · click to expand/collapse · d opens patch", len(revision.Files))
+		}
+		if fresh && row.Kind != "empty" {
 			a.focus = "gitLog"
-			a.gitLogSelected = index
-			a.openGitRevision()
+			if row.Kind == "meta" {
+				row.Kind = "commit"
+			}
+			a.selectGitLogRow(row, index)
+			a.activateGitLogRow()
 		}
 	}
 	return true

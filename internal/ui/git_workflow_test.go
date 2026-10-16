@@ -152,6 +152,10 @@ func TestGitLogSidebarOpensCommitDiff(t *testing.T) {
 	}
 	a.draw()
 	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	if a.modal != nil || a.gitLogOpen[a.gitLog[0].Hash] {
+		t.Fatal("Enter did not collapse commit files")
+	}
+	a.key(tcell.NewEventKey(tcell.KeyRune, "d", 0))
 	waitUpdates(t, a, func() bool { return a.modal != nil })
 	if !strings.HasPrefix(a.modal.Title, "Diff: Commit") || !strings.Contains(strings.Join(a.modal.Body, "\n"), "+history line") {
 		t.Fatal("history did not open commit patch", a.modal)

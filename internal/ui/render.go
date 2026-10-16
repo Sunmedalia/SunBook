@@ -98,6 +98,7 @@ func (a *App) draw() {
 	a.screen.Fill(' ', a.base)
 	a.screen.HideCursor()
 	a.buttons = nil
+	a.scrollbars = nil
 	a.treeFilterRect = rect{}
 	a.searchInputRect = rect{}
 	a.searchIncludeRect = rect{}
@@ -272,6 +273,7 @@ func (a *App) drawEditor(group int) {
 		return
 	}
 	b := v.Doc.Buffer
+	textRight := r.X + r.W - a.editorScrollbarWidth(group)
 	gutter := a.gutter(v)
 	current, _ := b.Position(v.Head())
 	hl := a.highlight[v.Doc]
@@ -354,15 +356,15 @@ func (a *App) drawEditor(group int) {
 			if tab {
 				for dx := 0; dx < gw; dx++ {
 					xx := screenX + dx
-					if xx >= r.X+gutter && xx < r.X+r.W {
+					if xx >= r.X+gutter && xx < textRight {
 						a.put(xx, y, 1, " ", style)
 					}
 				}
-			} else if screenX >= r.X+gutter && screenX+gw <= r.X+r.W {
+			} else if screenX >= r.X+gutter && screenX+gw <= textRight {
 				a.put(screenX, y, gw, str, style)
 			}
 			col += gw
-			if screenX >= r.X+r.W {
+			if screenX >= textRight {
 				break
 			}
 		}
@@ -371,23 +373,26 @@ func (a *App) drawEditor(group int) {
 			loSel, z := sel.Range()
 			if loSel <= end && z > end {
 				xx := r.X + gutter + col - v.Left
-				if xx >= r.X+gutter && xx < r.X+r.W {
+				if xx >= r.X+gutter && xx < textRight {
 					a.put(xx, y, 1, " ", a.selected)
 				}
 			}
 			if sel.Head == end && (len(v.Selections) > 1 || group != a.active) {
 				xx := r.X + gutter + col - v.Left
-				if xx >= r.X+gutter && xx < r.X+r.W {
+				if xx >= r.X+gutter && xx < textRight {
 					a.put(xx, y, 1, " ", a.base.Reverse(true))
 				}
 			}
 		}
 	}
+	if a.editorScrollbarWidth(group) > 0 {
+		a.drawContentScrollbar(r, &v.Top, b.LineCount(), "editor", group)
+	}
 	if group == a.active && a.focus == "editor" && a.modal == nil {
 		row, c := b.Position(v.Head())
 		x := r.X + gutter + text.Column(b.Line(row), c, a.cfg.TabSize) - v.Left
 		y := r.Y + row - v.Top
-		if x >= r.X+gutter && x < r.X+r.W && y >= r.Y && y < r.Y+r.H {
+		if x >= r.X+gutter && x < textRight && y >= r.Y && y < r.Y+r.H {
 			a.screen.ShowCursor(x, y)
 		}
 	}
@@ -718,6 +723,10 @@ func (a *App) drawModal() {
 			a.put(labelX, contentY+i, labelWidth, fitLabel(it.Label, labelWidth), style)
 		}
 	} else if len(m.Body) > 0 {
+		bodyWidth := width - 4
+		if len(m.Body) > available {
+			bodyWidth--
+		}
 		for i := 0; i < available && i+m.Top < len(m.Body); i++ {
 			line := m.Body[i+m.Top]
 			style := a.chrome
@@ -733,8 +742,9 @@ func (a *App) drawModal() {
 			}
 			line = expandTabs(line, a.cfg.TabSize)
 			offset := text.Offset(line, m.BodyLeft, a.cfg.TabSize)
-			a.put(x+2, contentY+i, width-4, line[offset:], style)
+			a.put(x+2, contentY+i, bodyWidth, line[offset:], style)
 		}
+		a.drawContentScrollbar(rect{x + 2, contentY, width - 4, available}, &m.Top, len(m.Body), "modal", 0)
 	} else if m.Open != nil {
 		a.put(x+2, contentY, width-4, fitLabel(m.Empty, width-4), a.muted)
 	} else if m.Filter {

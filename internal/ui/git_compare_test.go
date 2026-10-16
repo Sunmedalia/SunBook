@@ -131,7 +131,9 @@ func TestInlineGitLogScrollAndSelectionSurviveRefresh(t *testing.T) {
 	if a.gitLogTop != 3 || a.gitTop != 1 {
 		t.Fatal("log scroll affected changes", a.gitLogTop, a.gitTop)
 	}
-	anchor := a.gitLog[a.gitLogTop].Hash
+	anchorRow := a.gitLogRows()[a.gitLogTop]
+	anchor := a.gitLog[anchorRow.Commit].Hash
+	anchorKey := a.gitLogRowKey(anchorRow)
 	a.gitLogSelected = 2
 	selected := a.gitLog[2].Hash
 	gitservice.StageAll(ctx, a.root)
@@ -140,11 +142,15 @@ func TestInlineGitLogScrollAndSelectionSurviveRefresh(t *testing.T) {
 	}
 	a.refreshGit()
 	waitUpdates(t, a, func() bool { return !a.gitReading && !a.gitLogReading })
-	if a.gitLog[0].Subject != "new head" || a.gitLog[a.gitLogSelected].Hash != selected || a.gitLog[a.gitLogTop].Hash != anchor {
+	if a.gitLog[0].Subject != "new head" || a.gitLog[a.gitLogSelected].Hash != selected || a.gitLogRowKey(a.gitLogRows()[a.gitLogTop]) != anchorKey {
 		t.Fatal("log refresh jumped selection or viewport", a.gitLogSelected, a.gitLogTop)
 	}
 	a.draw()
 	click(a, a.gitLogRect.X+2, a.gitLogRect.Y)
+	if a.modal != nil || !a.gitLogOpen[anchor] {
+		t.Fatal("clicked commit did not expand its files")
+	}
+	a.key(tcell.NewEventKey(tcell.KeyRune, "d", 0))
 	waitUpdates(t, a, func() bool { return a.modal != nil })
 	if !strings.Contains(a.modal.Title, anchor) {
 		t.Fatal("clicked log opened wrong commit", a.modal.Title)

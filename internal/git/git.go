@@ -36,7 +36,10 @@ type Status struct {
 	Files                []File
 }
 
-type Revision struct{ Hash, Author, Age, Subject string }
+type Revision struct {
+	Hash, Author, Age, Subject string
+	Files                      []CommitFile
+}
 
 func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"--literal-pathspecs", "-C", dir}, args...)...)
@@ -169,7 +172,7 @@ func Diff(ctx context.Context, root string, f File, staged bool) (string, error)
 	return Run(ctx, root, args...)
 }
 func Log(ctx context.Context, root, path string) ([]Revision, error) {
-	args := []string{"log", "-40", "--format=%h%x00%an%x00%ar%x00%s"}
+	args := []string{"log", "-40", "--format=%H%x00%an%x00%ar%x00%s"}
 	if path != "" {
 		args = append(args, "--follow")
 	}
@@ -185,7 +188,11 @@ func Log(ctx context.Context, root, path string) ([]Revision, error) {
 	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
 		fields := strings.SplitN(line, "\x00", 4)
 		if len(fields) == 4 {
-			result = append(result, Revision{fields[0], fields[1], fields[2], fields[3]})
+			files, err := CommitFiles(ctx, root, fields[0])
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, Revision{Hash: fields[0], Author: fields[1], Age: fields[2], Subject: fields[3], Files: files})
 		}
 	}
 	return result, nil

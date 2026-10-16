@@ -36,7 +36,7 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   shortcut reference showing current keybindings and controls for each panel;
   Esc closes it. Actions use the same icon family as the activity bar; wider
   windows also show names for New, Open, Save, Find, Terminal, and Help.
-  Undo, redo, split, refresh, and menu controls use compact icons. Hover shows
+  The Split button includes its name. Undo, redo, refresh, and menu controls use compact icons. Hover shows
   the operation and shortcut. Narrow windows use icon buttons for more actions;
   all actions remain available under More/F1. Raised button faces show hover,
   press, active, and disabled states; hover shows an action hint.
@@ -75,6 +75,9 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   Enter, Open / Quick Open, and opening in a split keep files open immediately.
   Existing open files and unsaved changes are preserved when browsing previews.
 - Click, drag, double-click a word, triple-click a line, scroll with the wheel.
+- Editor groups, comparison panes, and text dialogs have a one-column scrollbar
+  when content overflows. Click the track or drag the thumb to scroll without
+  changing the cursor or editing content. Comparison panes scroll together.
 - Alt+click adds a cursor. Ctrl+D selects a word and then its next occurrence.
 - Shared documents in splits; independent selections and scroll positions.
 - Unicode grapheme movement/deletion, automatic indentation and bracket pairing,
@@ -214,9 +217,15 @@ button restores the original editor. Open buffers and unsaved edits are preserve
 `D` shows the selected file's staged comparison. Binary files show byte counts.
 
 Git log is shown at the bottom of the sidebar with commit hashes, subjects,
-authors, and relative times. Its wheel scroll is independent of the change list.
-`h`, **Log**, or Tab from the change list focuses it; arrows select and Enter or
-click views a commit patch. Drag the log header divider up/down to resize the
+authors, relative times, and changed-file counts. Click a commit or press Enter
+to expand its changed files as a directory tree; folders can also collapse.
+Left/Right navigates and collapses/expands nodes; Up/Down moves through commits,
+folders, and files. Click a file or press Enter to compare that commit's snapshot
+with its first parent, including renamed/deleted files; the working tree is not
+used. Press `d` to view the selected commit's full patch. The newest commit is
+expanded initially. Refresh keeps expansion, selected files, and visible rows.
+Its wheel scroll is independent of the change list.
+`h`, **Log**, or Tab from the change list focuses it. Drag the log header divider up/down to resize the
 log and change list; the size is remembered while switching sidebars. The header
 arrow expands the log and restores the chosen size. **More →
 Selected file history** restricts the log to that file (following renames);

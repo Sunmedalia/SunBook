@@ -175,6 +175,10 @@ func (a *App) drawComparison() {
 	c.Rects = [2]rect{{r.X, 3, left, r.H}, {r.X + left + 1, 3, max(0, width-left-1), r.H}}
 	c.Top = max(0, min(c.Top, max(0, len(c.Rows)-max(1, r.H))))
 	for pane, pr := range c.Rects {
+		contentWidth := pr.W
+		if len(c.Rows) > pr.H && pr.W > 1 {
+			contentWidth--
+		}
 		label := c.Pair.OldLabel
 		if pane == 1 {
 			label = c.Pair.NewLabel
@@ -217,8 +221,9 @@ func (a *App) drawComparison() {
 			if number > 0 {
 				offset = c.LineOffsets[pane][number-1]
 			}
-			a.drawComparisonLine(pr.X+gutter, y, pr.W-gutter, line, offset, c.Left[pane], c.Highlights[pane], style)
+			a.drawComparisonLine(pr.X+gutter, y, contentWidth-gutter, line, offset, c.Left[pane], c.Highlights[pane], style)
 		}
+		a.drawContentScrollbar(pr, &c.Top, len(c.Rows), "diff", pane)
 	}
 	for y := 2; y < r.Y+r.H; y++ {
 		a.put(c.Rects[1].X-1, y, 1, "│", a.base.Foreground(a.colors.border))

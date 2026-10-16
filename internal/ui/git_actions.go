@@ -151,7 +151,12 @@ func (a *App) gitDiff(staged bool) {
 		return
 	}
 	f := a.git.Files[e.File]
-	root, workspace := a.git.Root, a.root
+	a.readGitComparison(a.git.Root, func(ctx context.Context, root string) (gitservice.Comparison, error) {
+		return gitservice.Compare(ctx, root, f, staged)
+	})
+}
+func (a *App) readGitComparison(root string, read func(context.Context, string) (gitservice.Comparison, error)) {
+	workspace := a.root
 	a.gitViewSeq++
 	seq := a.gitViewSeq
 	base := a.base
@@ -159,7 +164,7 @@ func (a *App) gitDiff(staged bool) {
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 		defer cancel()
-		pair, err := gitservice.Compare(ctx, root, f, staged)
+		pair, err := read(ctx, root)
 		var view *gitComparison
 		if err == nil {
 			view = newGitComparison(pair)

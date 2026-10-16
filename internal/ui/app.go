@@ -154,6 +154,8 @@ type App struct {
 	gitLog                                                []gitservice.Revision
 	gitLogPath, gitLogError                               string
 	gitLogSelected, gitLogTop, gitLogSeq                  int
+	gitLogNode                                            string
+	gitLogOpen, gitLogCollapsed                           map[string]bool
 	gitLogHeight                                          int
 	gitLogReading, gitLogLoaded, gitLogExpanded           bool
 	gitLogRefreshed                                       time.Time
@@ -199,6 +201,8 @@ type App struct {
 	mouseClicks                           uint64
 	fileClick                             fileClick
 	themeSeq                              int
+	scrollbars                            []contentScrollbar
+	scrollDrag                            *scrollbarDrag
 	base, muted, accent, chrome, selected tcell.Style
 	colors                                palette
 }
@@ -313,6 +317,7 @@ func (a *App) Run() error {
 			switch e := ev.(type) {
 			case *tcell.EventResize:
 				a.tabDrag = nil
+				a.scrollDrag = nil
 				a.screen.Sync()
 			case *tcell.EventPaste:
 				if e.Start() {
@@ -854,6 +859,9 @@ func (a *App) switchWorkspace() {
 			a.comparison = nil
 			a.gitLogSeq++
 			a.gitLog = nil
+			a.gitLogNode = ""
+			a.gitLogOpen = nil
+			a.gitLogCollapsed = nil
 			a.gitLogPath = ""
 			a.gitLogError = ""
 			a.gitLogSelected = 0

@@ -78,6 +78,7 @@ func keyName(e *tcell.EventKey) string {
 	return prefix + name
 }
 func (a *App) key(e *tcell.EventKey) {
+	a.scrollDrag = nil
 	a.fileClick = fileClick{}
 	name := keyName(e)
 	if a.tabDrag != nil && name == "escape" {
@@ -485,6 +486,7 @@ func terminalKey(e *tcell.EventKey) uv.Key {
 }
 
 func (a *App) setModal(m *modal) {
+	a.scrollDrag = nil
 	a.tabDrag = nil
 	a.gitViewSeq++
 	a.completion = nil
@@ -717,6 +719,9 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		wheel = 3
 	}
 	a.lastButtons = buttons
+	if a.scrollbarMouse(x, y, press, fresh) {
+		return
+	}
 	if a.modal != nil {
 		m := a.modal
 		if a.openNavigationMouse(m, x, y, fresh) {
@@ -1013,7 +1018,7 @@ func (a *App) reveal() {
 	r, c := b.Position(v.Head())
 	area := a.rects[a.active]
 	h := max(1, area.H)
-	w := max(4, area.W-a.gutter(v))
+	w := max(4, area.W-a.gutter(v)-a.editorScrollbarWidth(a.active))
 	if r < v.Top {
 		v.Top = r
 	}

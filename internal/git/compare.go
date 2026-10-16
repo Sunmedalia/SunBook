@@ -73,6 +73,10 @@ func Compare(ctx context.Context, root string, f File, staged bool) (Comparison,
 	if err != nil {
 		return c, err
 	}
+	return finishComparison(ctx, c)
+}
+
+func finishComparison(ctx context.Context, c Comparison) (Comparison, error) {
 	c.Binary = !utf8.ValidString(c.Old) || !utf8.ValidString(c.New) || strings.ContainsRune(c.Old, 0) || strings.ContainsRune(c.New, 0)
 	if c.Binary {
 		return c, nil

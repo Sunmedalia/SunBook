@@ -25,7 +25,10 @@ def main():
         nested.write_text("nested sample", encoding="utf-8")
         config = Path(workspace) / "smoke-config.json"
         config.write_text(json.dumps({"shell": "/bin/sh"}), encoding="utf-8")
+        history = Path(workspace) / "history.go"
+        history.write_text('package history\nvar value = "committed"\n', encoding="utf-8")
         subprocess.run(["git", "init", "-q", workspace], check=True, capture_output=True)
+        subprocess.run(["git", "-C", workspace, "add", "--", "history.go"], check=True, capture_output=True)
         subprocess.run(["git", "-C", workspace, "-c", "user.name=SunBook Test",
                         "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
                         "-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-m", "SMOKE LOG"],
@@ -148,6 +151,12 @@ def main():
             os.write(master, b"x\x13\x17")  # read-only typing/save, then Ctrl+W closes diff
             if nested.read_text() != "nested sample":
                 raise AssertionError("comparison changed the working file")
+            # The expanded commit lists its files directly below its metadata.
+            received.clear()
+            click(15, 27)  # history.go beneath the first commit in the log
+            wait_for(lambda: b"EMPTY" in received and b"committed" in received,
+                     "Git log file opens committed snapshots")
+            os.write(master, b"\x17")  # Ctrl+W closes the historic comparison
             click(3, 3)  # activity E restores Explorer
             received.clear()
             click(3, 6)  # activity S restores query and results
@@ -209,15 +218,21 @@ def main():
 
             # Use the top New button and save a new buffer through Save As.
             click(13, 1)
-            paste("toolbar draft\n")
+            draft = "toolbar draft\n" + "".join(f"scroll {i}\n" for i in range(80))
+            paste(draft)
             received.clear()
             os.write(master, b"\x13")
             wait_for(lambda: b"Save As" in received, "toolbar New and Save As")
             toolbar_path = Path(workspace) / "toolbar.txt"
             paste(str(toolbar_path))
             os.write(master, b"\r")
-            wait_for(lambda: toolbar_path.exists() and toolbar_path.read_text() == "toolbar draft\n",
+            wait_for(lambda: toolbar_path.exists() and toolbar_path.read_text() == draft,
                      "toolbar-created file saves")
+            received.clear()
+            click(110, 4)  # one-column scrollbar: jump to the start without editing
+            wait_for(lambda: b"toolbar draft" in received, "content scrollbar scrolls to the start")
+            if toolbar_path.read_text() != draft:
+                raise AssertionError("scrollbar changed saved content")
             # Reorder a tab with a real SGR mouse drag; a caret previews insertion.
             received.clear()
             os.write(master, b"\x1b[<0;36;2M\x1b[<32;107;2M")
@@ -249,7 +264,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, theme switching and persistence, toolbar, dock switching, tab drag, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()

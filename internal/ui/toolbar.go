@@ -122,7 +122,10 @@ func (a *App) drawToolbar() {
 		{"Terminal", "view.showTerminal", "Show terminal (F4 focuses; Ctrl+J hides panel)", a.panelVisible && a.panel == "Terminal", false},
 	}
 	for _, action := range actions {
-		compact := w < 100 || action.iconOnly || action.id == "view.split"
+		compact := w < 100 || action.iconOnly
+		if action.id == "view.split" {
+			compact = false
+		}
 		label := a.actionLabel(action.id, action.label, compact)
 		width := text.Width(label, 4) + 2
 		if x+width >= moreX {

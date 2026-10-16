@@ -200,6 +200,7 @@ Click / drag             Place cursor / select text
 Double / triple click    Select word / line
 Alt+click                Add cursor
 Mouse wheel              Scroll; drag borders to resize panes
+Content scrollbar        Click or drag the one-column track to scroll
 Drag file tab            Reorder tabs; drop on editor edge to split
 Double-click file tab    Keep preview open (italic filename = preview)
 
@@ -231,6 +232,9 @@ o                        Open working file for editing
 c                        Focus commit message; Enter commits staged files
 / or Ctrl+F              Filter changed paths
 h / Tab                  Focus log / switch lists
+Enter / click (log)      Expand commit files / folders; view file comparison
+Left / Right (log)       Collapse / expand the selected tree node
+d (log)                  View the full commit patch
 m                        More Git actions
 
 COMPARISON
