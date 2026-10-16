@@ -103,6 +103,20 @@ func (a *App) registerCommands() {
 		{"git.selectedDiff", "Git: Show Selected Diff", "", a.selectedGitDiff},
 		{"git.open", "Git: Open Selected File", "", a.openGitFile},
 		{"git.commit", "Git: Commit Staged Changes…", "", a.commit},
+		{"git.more", "Git: More Actions", "", a.gitMore},
+		{"git.stageAll", "Git: Stage All Repository Changes", "", func() { a.gitAllAction(true) }},
+		{"git.unstageAll", "Git: Unstage All Files", "", func() { a.gitAllAction(false) }},
+		{"git.stageCHANGES", "Git: Stage Tracked Changes", "", func() { a.gitStageGroup("CHANGES") }},
+		{"git.stageUNTRACKED", "Git: Stage Untracked Files", "", func() { a.gitStageGroup("UNTRACKED") }},
+		{"git.stageCONFLICTS", "Git: Stage Resolved Conflicts", "", func() { a.gitStageGroup("CONFLICTS") }},
+		{"git.history", "Git: Recent Commits", "", func() { a.gitHistory(false) }},
+		{"git.fileHistory", "Git: Selected File History", "", func() { a.gitHistory(true) }},
+		{"git.toggleLog", "Git: Expand / Restore Log", "", func() {
+			a.gitLogExpanded = !a.gitLogExpanded
+			if a.gitLogExpanded {
+				a.focus = "gitLog"
+			}
+		}},
 	}
 	a.bindings = map[string]string{"f1": "app.commands", "ctrl+shift+z": "edit.redo", "f3": "search.find", "f5": "git.refresh"}
 	for _, c := range a.commands {
@@ -115,6 +129,21 @@ func (a *App) registerCommands() {
 	}
 }
 func (a *App) execute(id string) {
+	if a.comparing() {
+		if id == "view.other" {
+			a.comparison.Pane = 1 - a.comparison.Pane
+			a.focus = "diff"
+			return
+		}
+		if id == "file.close" {
+			a.closeComparison()
+			return
+		}
+		if comparisonReadOnlyCommand(id) {
+			a.notify("Read-only comparison · press o to open the working file")
+			return
+		}
+	}
 	for _, cmd := range a.commands {
 		if cmd.ID == id {
 			a.completion = nil
@@ -141,19 +170,37 @@ func (a *App) help() {
 			s += fmt.Sprintf("%-24s %s\n", c.Key, c.Label)
 		}
 	}
-	s += "\nF1: command palette · F6: cycle focus · Esc: close overlay / clear extra cursors\nMouse: click / drag / double click / triple click / wheel\nAlt+click: add cursor · drag borders: resize panels\nTerminal: F4 focuses editor; Ctrl+J / [Hide] hides panel; [Kill] ends shell.\nSidebar: [E] Explorer / [S] Search / [G] Git; Ctrl+B hides.\nExplorer: click filter or press /; Esc clears; Down selects results.\nGit sidebar: s stage · u unstage · d selected diff · D staged diff · c commit\nModal input: Ctrl+U clears · Up/Down choose · Enter accepts\nAll actions are accessible through the command palette.\n"
+	s += "\nF1: command palette · F6: cycle focus · Esc: close overlay / clear extra cursors\nMouse: click / drag / double click / triple click / wheel\nAlt+click: add cursor · drag borders: resize panels\nTerminal: F4 focuses editor; Ctrl+J / [Hide] hides panel; [Kill] ends shell.\nSidebar: [E] Explorer / [S] Search / [G] Git; Ctrl+B hides.\nExplorer: click filter or press /; Esc clears; Down selects results.\nGit sidebar: s/u stage/unstage · S/U all · Enter diff · c message · / filter · m actions · h history\nModal input: Ctrl+U clears · Up/Down choose · Enter accepts\nAll actions are accessible through the command palette.\n"
 	a.showText("Keyboard Shortcuts", s)
 }
 func (a *App) nextTab(dir int) {
 	if len(a.docs) == 0 {
 		return
 	}
+	n := len(a.docs)
+	index := 0
 	for i, d := range a.docs {
 		if d == a.view().Doc {
-			a.activate(a.docs[(i+dir+len(a.docs))%len(a.docs)])
-			break
+			index = i
 		}
 	}
+	if a.comparison != nil {
+		if a.comparing() {
+			index = n
+		}
+		n++
+	}
+	index = (index + dir + n) % n
+	if index == len(a.docs) {
+		a.comparison.Active = true
+		a.focus = "diff"
+	} else {
+		a.activate(a.docs[index])
+	}
+}
+
+func comparisonReadOnlyCommand(id string) bool {
+	return strings.HasPrefix(id, "edit.") || strings.HasPrefix(id, "language.") || id == "file.save" || id == "file.saveAs" || id == "file.rename" || id == "file.reload" || id == "search.find" || id == "search.replace" || id == "navigate.line"
 }
 func (a *App) saveAll() {
 	var next func(int)
@@ -253,6 +300,10 @@ func (a *App) paste(s string) {
 	}
 	if a.focus == "searchInput" {
 		a.insertSearchQuery(s)
+		return
+	}
+	if a.focus == "gitMessage" || a.focus == "gitFilter" {
+		a.insertGitInput(s)
 		return
 	}
 	if a.focus == "editor" && a.view().Insert(s) {

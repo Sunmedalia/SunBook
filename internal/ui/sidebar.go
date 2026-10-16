@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +15,7 @@ type sideHit struct {
 }
 type sidebarRow struct {
 	Label   string
+	Group   string
 	Index   int
 	Heading bool
 }
@@ -25,7 +25,7 @@ type gitEntry struct {
 }
 
 func sidebarFocus(f string) bool {
-	return f == "tree" || f == "filter" || f == "searchInput" || f == "search" || f == "git"
+	return f == "tree" || f == "filter" || f == "searchInput" || f == "search" || f == "git" || f == "gitMessage" || f == "gitFilter" || f == "gitLog"
 }
 func (a *App) focusSidebar() {
 	switch a.sidebarView {
@@ -96,7 +96,7 @@ func (a *App) drawSidebarInput(r rect, value string, cursor int, placeholder, fo
 	if col := text.Width(value[:cursor], a.cfg.TabSize); col >= r.W {
 		offset = text.Offset(value, col-r.W+1, a.cfg.TabSize)
 	}
-	if value == "" && a.focus != focus {
+	if value == "" {
 		a.put(r.X, r.Y, r.W, placeholder, style.Foreground(a.colors.muted))
 	} else {
 		a.put(r.X, r.Y, r.W, value[offset:], style)
@@ -146,104 +146,6 @@ func (a *App) drawSidebarRows(rows []sidebarRow, start, top, selected int) {
 		}
 		a.put(r.X+1, y, r.W-2, label, style)
 	}
-}
-func (a *App) gitEntries() []gitEntry {
-	var entries []gitEntry
-	for i, f := range a.git.Files {
-		if f.Index != " " && f.Index != "?" && f.Index != "" {
-			entries = append(entries, gitEntry{i, true})
-		}
-	}
-	for i, f := range a.git.Files {
-		if f.Worktree != " " && f.Worktree != "" || f.Index == "?" {
-			entries = append(entries, gitEntry{i, false})
-		}
-	}
-	return entries
-}
-func (a *App) selectedGitEntry() (gitEntry, bool) {
-	entries := a.gitEntries()
-	if a.gitSelected < 0 || a.gitSelected >= len(entries) {
-		return gitEntry{}, false
-	}
-	return entries[a.gitSelected], true
-}
-func (a *App) gitRows() []sidebarRow {
-	entries := a.gitEntries()
-	var rows []sidebarRow
-	last := ""
-	for i, e := range entries {
-		heading := "CHANGES"
-		if e.Staged {
-			heading = "STAGED CHANGES"
-		}
-		if last != heading {
-			rows = append(rows, sidebarRow{Label: heading, Heading: true})
-			last = heading
-		}
-		f := a.git.Files[e.File]
-		status := f.Worktree
-		if e.Staged {
-			status = f.Index
-		}
-		rows = append(rows, sidebarRow{Label: status + " " + f.Path, Index: i})
-	}
-	return rows
-}
-func (a *App) selectedGitDiff() {
-	if entry, ok := a.selectedGitEntry(); ok {
-		a.gitDiff(entry.Staged)
-	}
-}
-func (a *App) openGitFile() {
-	if entry, ok := a.selectedGitEntry(); ok {
-		path := filepath.Join(a.git.Root, a.git.Files[entry.File].Path)
-		if _, err := os.Stat(path); err != nil {
-			a.showError(err)
-			return
-		}
-		a.showError(a.open(path))
-	}
-}
-func (a *App) drawGitSidebar() {
-	r := a.sideRect
-	a.put(r.X+1, r.Y, r.W-6, "SOURCE CONTROL", a.chrome.Foreground(a.colors.muted).Bold(true))
-	a.drawButton(r.X+r.W-4, r.Y, "R", "git.refresh", "Refresh Git status", false)
-	a.put(r.X+1, r.Y+1, r.W-2, "on "+a.git.Branch, a.chrome.Foreground(a.colors.muted))
-	x := r.X + 1
-	for _, b := range []struct{ label, id string }{{"Stage", "git.stage"}, {"Unstage", "git.unstage"}, {"Diff", "git.selectedDiff"}} {
-		w := len(b.label) + 2
-		if x+w > r.X+r.W {
-			break
-		}
-		x += a.drawButton(x, r.Y+2, b.label, b.id, b.label+" selected file", false) + 1
-	}
-	x = r.X + 1
-	for _, b := range []struct{ label, id string }{{"Commit", "git.commit"}, {"Open", "git.open"}} {
-		if x+len(b.label)+2 > r.X+r.W {
-			break
-		}
-		x += a.drawButton(x, r.Y+3, b.label, b.id, b.label+" selected changes", false) + 1
-	}
-	if a.gitError != "" {
-		a.put(r.X+1, r.Y+5, r.W-2, "Not a Git worktree", a.muted)
-		a.put(r.X+1, r.Y+6, r.W-2, a.gitError, a.muted)
-		return
-	}
-	rows := a.gitRows()
-	if len(rows) == 0 {
-		label := "Working tree clean"
-		if a.gitBusy || a.gitReading {
-			label = "Refreshing…"
-		}
-		a.put(r.X+1, r.Y+5, r.W-2, label, a.muted)
-		return
-	}
-	a.drawSidebarRows(rows, r.Y+5, a.gitTop, a.gitSelected)
-}
-func (a *App) moveGitSelection(delta int) {
-	a.gitSelected = max(0, min(a.gitSelected+delta, len(a.gitEntries())-1))
-	revealList(&a.gitTop, a.gitRows(), a.gitSelected, max(1, a.sideRect.H-5))
 }
 func (a *App) searchRows() []sidebarRow {
 	var rows []sidebarRow
@@ -315,17 +217,47 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 			}
 		}
 	case "Git":
+		if a.gitLogMouse(x, y, wheel, fresh) {
+			return
+		}
+		for _, field := range []struct {
+			r      rect
+			focus  string
+			value  string
+			offset int
+			cursor *int
+		}{
+			{a.gitMessageRect, "gitMessage", a.gitMessage, a.gitMessageOffset, &a.gitMessageCursor},
+			{a.gitFilterRect, "gitFilter", a.gitFilter, a.gitFilterOffset, &a.gitFilterCursor},
+		} {
+			if fresh && field.r.contains(x, y) {
+				a.focus = field.focus
+				*field.cursor = field.offset + text.Offset(field.value[field.offset:], x-field.r.X, a.cfg.TabSize)
+				return
+			}
+		}
 		if wheel != 0 {
 			a.gitTop = max(0, min(a.gitTop+wheel, max(0, len(a.gitRows())-1)))
 		}
 		if fresh {
 			a.focus = "git"
-			for _, hit := range a.sideHits {
-				if hit.contains(x, y) {
+		}
+		for _, hit := range a.sideHits {
+			if hit.contains(x, y) {
+				entries := a.gitEntries()
+				if hit.Index < len(entries) {
+					e := entries[hit.Index]
+					f := a.git.Files[e.File]
+					a.hoverHint = f.Path + " · Enter diff · s stage · u unstage · o open"
+					if f.OldPath != "" {
+						a.hoverHint = f.OldPath + " → " + a.hoverHint
+					}
+				}
+				if fresh {
 					a.gitSelected = hit.Index
 					a.selectedGitDiff()
-					return
 				}
+				return
 			}
 		}
 	default:

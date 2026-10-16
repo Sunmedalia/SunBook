@@ -7,6 +7,9 @@ import (
 )
 
 func (a *App) buttonEnabled(id string) bool {
+	if a.comparing() && comparisonReadOnlyCommand(id) {
+		return false
+	}
 	switch id {
 	case "edit.undo":
 		return a.view().Doc.Buffer.CanUndo()
@@ -21,17 +24,34 @@ func (a *App) buttonEnabled(id string) bool {
 		if !ok || a.gitBusy {
 			return false
 		}
+		f := a.git.Files[entry.File]
+		if id == "git.open" && (f.Worktree == "D" || f.Index == "D" && f.Worktree == " ") {
+			return false
+		}
 		return id != "git.stage" && id != "git.unstage" || (id == "git.unstage") == entry.Staged
 	case "git.commit":
+		staged, _, conflicts := a.gitCounts()
+		return !a.gitBusy && staged > 0 && conflicts == 0
+	case "git.stageAll":
+		_, changed, _ := a.gitCounts()
+		return !a.gitBusy && changed > 0
+	case "git.unstageAll":
+		staged, _, _ := a.gitCounts()
+		return !a.gitBusy && staged > 0
+	case "git.stageCHANGES", "git.stageUNTRACKED", "git.stageCONFLICTS":
 		if a.gitBusy {
 			return false
 		}
-		for _, entry := range a.gitEntries() {
-			if entry.Staged {
+		for _, f := range a.git.Files {
+			if f.Changed() && "git.stage"+gitGroup(f, false) == id {
 				return true
 			}
 		}
 		return false
+	case "git.more":
+		return a.git.Root != ""
+	case "git.refresh":
+		return !a.gitBusy
 	}
 	return true
 }

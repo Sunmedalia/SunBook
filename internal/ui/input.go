@@ -108,6 +108,22 @@ func (a *App) key(e *tcell.EventKey) {
 		a.searchResultsKey(e, name)
 		return
 	}
+	if a.focus == "gitMessage" || a.focus == "gitFilter" {
+		a.gitInputKey(e, name)
+		return
+	}
+	if a.focus == "gitLog" {
+		a.gitLogKey(e, name)
+		return
+	}
+	if a.comparing() && (a.focus == "diff" || a.focus == "editor") {
+		a.comparisonKey(e, name)
+		return
+	}
+	if a.focus == "git" && (name == "ctrl+f" || name == "/") {
+		a.focusGitFilter()
+		return
+	}
 	if a.focus == "filter" {
 		a.treeFilterKey(e, name)
 		return
@@ -187,12 +203,30 @@ func (a *App) key(e *tcell.EventKey) {
 			a.moveGitSelection(-1)
 		case "down":
 			a.moveGitSelection(1)
-		case "s":
-			a.gitAction(true)
-		case "u":
-			a.gitAction(false)
-		case "d", "enter":
-			if e.Str() == "D" {
+		case "pageup":
+			a.moveGitSelection(-max(1, a.gitChangesRect.H))
+		case "pagedown":
+			a.moveGitSelection(max(1, a.gitChangesRect.H))
+		case "home":
+			a.gitSelected = 0
+			a.moveGitSelection(0)
+		case "end":
+			a.gitSelected = len(a.gitEntries()) - 1
+			a.moveGitSelection(0)
+		case "s", "shift+s":
+			if e.Str() == "S" || name == "shift+s" {
+				a.gitAllAction(true)
+			} else {
+				a.gitAction(true)
+			}
+		case "u", "shift+u":
+			if e.Str() == "U" || name == "shift+u" {
+				a.gitAllAction(false)
+			} else {
+				a.gitAction(false)
+			}
+		case "d", "shift+d", "enter":
+			if e.Str() == "D" || name == "shift+d" {
 				a.gitDiff(true)
 			} else {
 				a.selectedGitDiff()
@@ -200,9 +234,23 @@ func (a *App) key(e *tcell.EventKey) {
 		case "o":
 			a.openGitFile()
 		case "c":
-			a.commit()
+			a.focusGitMessage()
+		case "r":
+			a.refreshGit()
+		case "h":
+			a.gitHistory(false)
+		case "tab":
+			a.focus = "gitLog"
+			a.moveGitLog(0)
+		case "m":
+			a.gitMore()
 		case "escape":
-			a.focus = "editor"
+			a.gitViewSeq++
+			if a.gitFilter != "" {
+				a.setGitFilter("")
+			} else {
+				a.focus = "editor"
+			}
 		}
 		return
 	}
@@ -355,7 +403,7 @@ func (a *App) typeInput(s string) {
 	}
 }
 func (a *App) cycleFocus() {
-	if a.focus == "editor" {
+	if a.focus == "editor" || a.focus == "diff" {
 		if a.sidebar && a.sideRect.W > 0 {
 			a.focusSidebar()
 			return
@@ -423,6 +471,7 @@ func terminalKey(e *tcell.EventKey) uv.Key {
 }
 
 func (a *App) setModal(m *modal) {
+	a.gitViewSeq++
 	a.completion = nil
 	a.completionDue = zeroTime
 	a.modal = m
@@ -496,6 +545,27 @@ func (a *App) modalAccept() {
 }
 func (a *App) modalKey(e *tcell.EventKey, name string) {
 	m := a.modal
+	if !m.InputEnabled && len(m.Body) > 0 {
+		switch name {
+		case "left":
+			m.BodyLeft = max(0, m.BodyLeft-8)
+			return
+		case "right":
+			maxWidth := 0
+			for _, line := range m.Body {
+				maxWidth = max(maxWidth, text.Width(line, a.cfg.TabSize))
+			}
+			m.BodyLeft = min(max(0, maxWidth-(a.modalRect.W-4)), m.BodyLeft+8)
+			return
+		case "home":
+			m.Top = 0
+			m.BodyLeft = 0
+			return
+		case "end":
+			m.Top = max(0, len(m.Body)-max(1, m.ListH))
+			return
+		}
+	}
 	switch name {
 	case "ctrl+up":
 		m.BodyTop = max(0, m.BodyTop-1)
@@ -646,6 +716,14 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			w, _ := a.screen.Size()
 			start := a.rects[0].X
 			a.splitRatio = max(.2, min(.8, float64(x-start)/float64(max(1, w-start))))
+		case "diffSplit":
+			w, _ := a.screen.Size()
+			start := a.rects[0].X
+			if a.comparing() {
+				a.comparison.Ratio = max(.2, min(.8, float64(x-start)/float64(max(1, w-start))))
+			}
+		case "gitLogResize":
+			a.resizeGitLog(y)
 		case "select":
 			a.active = a.dragGroup
 			v := a.view()
@@ -664,11 +742,20 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			a.drag = "sidebar"
 			return
 		}
+		if a.sidebar && a.sidebarView == "Git" && a.gitError == "" && a.sideRect.contains(x, y) && a.gitLogHeader.contains(x, y) {
+			a.drag = "gitLogResize"
+			a.hoverHint = "Drag up/down to resize Git log"
+			return
+		}
 		if a.panelVisible && a.panelRect.H > 0 && y == a.panelRect.Y-1 && x >= a.panelRect.X+38 {
 			a.drag = "panel"
 			return
 		}
-		if a.split && x == a.rects[1].X-1 {
+		if a.comparing() && x == a.comparison.Rects[1].X-1 && y >= 2 {
+			a.drag = "diffSplit"
+			return
+		}
+		if !a.comparing() && a.split && x == a.rects[1].X-1 {
 			a.drag = "split"
 			return
 		}
@@ -680,6 +767,15 @@ func (a *App) mouse(e *tcell.EventMouse) {
 	if y == 1 && fresh {
 		for _, tab := range a.tabs {
 			if tab.contains(x, y) {
+				if tab.Doc == nil {
+					if x >= tab.X+tab.W-2 {
+						a.closeComparison()
+					} else {
+						a.comparison.Active = true
+						a.focus = "diff"
+					}
+					return
+				}
 				if x >= tab.X+tab.W-2 {
 					a.closeDocument(tab.Doc)
 				} else {
@@ -691,6 +787,9 @@ func (a *App) mouse(e *tcell.EventMouse) {
 	}
 	if a.panelVisible && a.panelRect.contains(x, y) {
 		a.panelMouse(e, fresh, wheel, previous)
+		return
+	}
+	if a.comparisonMouse(x, y, wheel, fresh, e.Modifiers()) {
 		return
 	}
 	for i, r := range a.rects {

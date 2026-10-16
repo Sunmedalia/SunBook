@@ -136,12 +136,43 @@ Python environment, or `tsconfig.json` gives better results than loose files.
 ## Git and terminal
 
 Use `G`, Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
-sidebar. Staged Changes and Changes are separate groups; a file with both
-staged and unstaged edits appears in each. Click a row or press `d`/Enter for
-that version's diff; `D` always shows the staged diff. `s` stages a file;
-`u` unstages it; `o` opens the file; `c` commits staged
-changes. Errors and hook failures appear in the status message. Commit messages
-and paths are passed directly to Git, never interpolated into shell commands.
+sidebar. Staged files, tracked changes, untracked files, and conflicts have
+separate counted groups and colored status badges. A file with both staged and
+unstaged edits appears in each group. Filenames stay readable in narrow sidebars;
+hover shows the full path. Branch arrows show ahead/behind counts from local refs.
+
+Click a row or press `d`/Enter to open an editor comparison tab. Staged changes
+compare HEAD with Index; unstaged changes compare Index with the saved worktree.
+Added and removed rows are aligned and colored, with line numbers and synchronized
+vertical scrolling. Click either pane to focus it; Tab switches sides, Left/Right
+pan, `n`/`p` jump between changes, and the divider can be dragged. The comparison
+is read-only: `o` opens the working file for editing; Ctrl+W / the tab's close
+button restores the original editor. Open buffers and unsaved edits are preserved.
+`D` shows the selected file's staged comparison. Binary files show byte counts.
+
+Git log is shown at the bottom of the sidebar with commit hashes, subjects,
+authors, and relative times. Its wheel scroll is independent of the change list.
+`h`, **Log**, or Tab from the change list focuses it; arrows select and Enter or
+click views a commit patch. Drag the log header divider up/down to resize the
+log and change list; the size is remembered while switching sidebars. The header
+arrow expands the log and restores the chosen size. **More →
+Selected file history** restricts the log to that file (following renames);
+**Log** returns to repository history. Background refresh keeps the selected
+commit and scroll position without progress messages or flickering buttons.
+
+`s` stages a file; `u` unstages it; `o` opens it. Group-header `+` stages the
+entire group; `−` unstages all staged files. **More** also provides repository-wide
+stage/unstage and repository details. `S` / `U` stage / unstage all changes.
+
+Press `c` or click the message field to write a commit message, then Enter or
+**Commit** to commit staged files only. Drafts survive sidebar switches and failed
+commits; successful commits clear the submitted draft. Conflicts block commits
+until resolved and staged. Git operates on saved files on disk. `/` or Ctrl+F
+filters changed paths; Esc in the filter clears it. Small terminals provide the
+filter in a prompt. Filtering does not change the scope of commits or group/batch
+actions. F5 refreshes status. Errors and hook failures appear in the status
+message, with a persistent error summary in the sidebar. Commit messages and
+paths are passed directly to Git, never interpolated into shell commands.
 Configure Git name/email and signing separately as usual. There is no push,
 branch management, or discard-changes command in this release.
 

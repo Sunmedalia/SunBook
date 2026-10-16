@@ -162,20 +162,20 @@ func TestGitSidebarGroupsAndTargetsCorrectVersion(t *testing.T) {
 	}
 	a.gitSelected = staged
 	a.selectedGitDiff()
-	waitUpdates(t, a, func() bool { return a.modal != nil })
-	body := strings.Join(a.modal.Body, "\n")
+	waitUpdates(t, a, func() bool { return a.comparison != nil })
+	body := a.comparison.Pair.Patch
 	if !strings.Contains(body, "+staged") || strings.Contains(body, "+unstaged") {
 		t.Fatal("staged row opened worktree diff", body)
 	}
-	a.key(tcell.NewEventKey(tcell.KeyEsc, "", 0))
+	a.closeComparison()
 	a.gitSelected = work
 	a.selectedGitDiff()
-	waitUpdates(t, a, func() bool { return a.modal != nil })
-	body = strings.Join(a.modal.Body, "\n")
+	waitUpdates(t, a, func() bool { return a.comparison != nil })
+	body = a.comparison.Pair.Patch
 	if !strings.Contains(body, "+unstaged") {
 		t.Fatal("worktree row opened staged diff", body)
 	}
-	a.key(tcell.NewEventKey(tcell.KeyEsc, "", 0))
+	a.closeComparison()
 	a.gitSelected = work
 	a.refreshGit() // A background status read must not swallow Stage.
 	if !a.gitReading {

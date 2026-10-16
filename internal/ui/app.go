@@ -49,6 +49,7 @@ type modal struct {
 	InputEnabled, Filter  bool
 	Body                  []string
 	BodyTop, ListY, ListH int
+	BodyLeft              int
 	Submit                func(string, int)
 	Changed               func(string)
 }
@@ -127,6 +128,22 @@ type App struct {
 	gitBusy                                               bool
 	gitReading                                            bool
 	gitSeq                                                int
+	gitMessage, gitFilter                                 string
+	gitMessageCursor, gitMessageOffset                    int
+	gitFilterCursor, gitFilterOffset                      int
+	gitMessageRect, gitFilterRect                         rect
+	gitListY                                              int
+	gitOperation                                          string
+	gitActionError                                        string
+	gitViewSeq                                            int
+	comparison                                            *gitComparison
+	gitLog                                                []gitservice.Revision
+	gitLogPath, gitLogError                               string
+	gitLogSelected, gitLogTop, gitLogSeq                  int
+	gitLogHeight                                          int
+	gitLogReading, gitLogLoaded, gitLogExpanded           bool
+	gitLogRefreshed                                       time.Time
+	gitChangesRect, gitLogRect, gitLogHeader              rect
 	term                                                  *terminal.Session
 	termOffset                                            int
 	termExited                                            bool
@@ -318,6 +335,10 @@ func (a *App) addDocument(d *editor.Document) {
 	a.scheduleHighlight(d)
 }
 func (a *App) activate(d *editor.Document) {
+	a.gitViewSeq++
+	if a.comparison != nil {
+		a.comparison.Active = false
+	}
 	v := a.viewCache[a.active][d]
 	if v == nil {
 		v = editor.NewView(d)
@@ -401,6 +422,9 @@ func mapOffset(p int, edits []text.Edit) int {
 	return p + delta
 }
 func (a *App) splitEditor() {
+	if a.comparison != nil {
+		a.comparison.Active = false
+	}
 	if a.split {
 		a.split = false
 		a.active = 0
@@ -657,6 +681,8 @@ func (a *App) confirmDocument(d *editor.Document, done func()) {
 	a.choose("Save changes to "+d.Name()+"?", []item{{Label: "Save", Action: func() { a.save(d, done) }}, {Label: "Discard", Action: done}, {Label: "Cancel"}})
 }
 func (a *App) closeDocument(d *editor.Document) {
+	comparison := a.comparison
+	wasComparing := a.comparing()
 	a.confirmDocument(d, func() {
 		for i, v := range a.docs {
 			if v == d {
@@ -686,6 +712,9 @@ func (a *App) closeDocument(d *editor.Document) {
 			}
 		}
 		a.active = old
+		if wasComparing && comparison == a.comparison {
+			a.comparison.Active = true
+		}
 	})
 }
 func (a *App) confirmExit() {
@@ -744,6 +773,20 @@ func (a *App) switchWorkspace() {
 			a.gitError = ""
 			a.gitSelected = 0
 			a.gitTop = 0
+			a.gitMessage, a.gitFilter, a.gitActionError = "", "", ""
+			a.gitMessageCursor, a.gitFilterCursor = 0, 0
+			a.gitViewSeq++
+			a.comparison = nil
+			a.gitLogSeq++
+			a.gitLog = nil
+			a.gitLogPath = ""
+			a.gitLogError = ""
+			a.gitLogSelected = 0
+			a.gitLogTop = 0
+			a.gitLogReading = false
+			a.gitLogLoaded = false
+			a.gitLogRefreshed = zeroTime
+			a.gitLogExpanded = false
 			if a.treeIndexCancel != nil {
 				a.treeIndexCancel()
 			}

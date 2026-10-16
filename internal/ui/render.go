@@ -90,6 +90,8 @@ func (a *App) draw() {
 	a.buttons = nil
 	a.treeFilterRect = rect{}
 	a.searchInputRect = rect{}
+	a.gitMessageRect = rect{}
+	a.gitFilterRect = rect{}
 	a.sideHits = nil
 	if w < 24 || h < 7 {
 		a.put(0, 0, w, "SunBook — enlarge terminal", a.accent)
@@ -108,24 +110,42 @@ func (a *App) draw() {
 	start := a.rects[0].X
 	a.fill(rect{start, 1, w - start, 1}, a.chrome)
 	a.drawTabs(start, w-start)
-	path := a.view().Doc.Path
-	if path == "" {
-		path = "Untitled — Ctrl+S to save"
-	} else if rel, e := filepath.Rel(a.root, path); e == nil {
-		path = rel
-	}
-	a.put(start+1, 2, w-start-2, path, a.muted)
-	a.drawEditor(0)
-	if a.split && a.rects[1].W > 0 {
-		for y := 3; y < a.rects[1].Y+a.rects[1].H; y++ {
-			a.put(a.rects[1].X-1, y, 1, "│", a.base.Foreground(a.colors.border))
+	if a.comparing() {
+		a.drawComparison()
+	} else {
+		path := a.view().Doc.Path
+		if path == "" {
+			path = "Untitled — Ctrl+S to save"
+		} else if rel, e := filepath.Rel(a.root, path); e == nil {
+			path = rel
 		}
-		a.drawEditor(1)
+		a.put(start+1, 2, w-start-2, path, a.muted)
+		a.drawEditor(0)
+		if a.split && a.rects[1].W > 0 {
+			for y := 3; y < a.rects[1].Y+a.rects[1].H; y++ {
+				a.put(a.rects[1].X-1, y, 1, "│", a.base.Foreground(a.colors.border))
+			}
+			a.drawEditor(1)
+		}
 	}
 	if a.panelRect.H > 0 {
 		a.drawPanel()
 	}
 	hint := "F1 Commands   Ctrl+P Files   Ctrl+S Save   Ctrl+Q Quit"
+	switch a.focus {
+	case "git":
+		hint = "Enter Diff · s Stage · u Unstage · c Message · / Filter · m More · h History"
+	case "gitMessage":
+		hint = "Enter Commit staged · Tab Filter · Ctrl+U Clear · Esc File list"
+	case "gitFilter":
+		hint = "Type to filter changes · Enter File list · Esc Clear filter"
+	}
+	if a.comparing() && (a.focus == "diff" || a.focus == "editor") {
+		hint = "Read-only diff · ↑/↓ Scroll · Tab Other side · n/p Change · o Open file · Esc Close"
+	}
+	if a.focus == "gitLog" {
+		hint = "Git log · ↑/↓ Select · Enter Commit · Tab Changes · Esc Editor"
+	}
 	if a.hoverHint != "" {
 		hint = a.hoverHint
 	}
@@ -605,10 +625,32 @@ func (a *App) drawModal() {
 					style = style.Foreground(a.colors.danger)
 				}
 			}
-			a.put(x+2, contentY+i, width-4, line, style)
+			line = expandTabs(line, a.cfg.TabSize)
+			offset := text.Offset(line, m.BodyLeft, a.cfg.TabSize)
+			a.put(x+2, contentY+i, width-4, line[offset:], style)
 		}
 	} else if m.Filter {
 		a.put(x+2, contentY, width-4, "No matches", a.muted)
 	}
 	a.put(x+2, y+height-2, width-4, fitLabel(m.Hint, width-4), a.chrome.Foreground(a.colors.muted))
+}
+
+func expandTabs(line string, tabSize int) string {
+	if !strings.ContainsRune(line, '\t') {
+		return line
+	}
+	var out strings.Builder
+	col := 0
+	g := uniseg.NewGraphemes(line)
+	for g.Next() {
+		if g.Str() == "\t" {
+			width := tabSize - col%tabSize
+			out.WriteString(strings.Repeat(" ", width))
+			col += width
+		} else {
+			out.WriteString(g.Str())
+			col += max(1, g.Width())
+		}
+	}
+	return out.String()
 }

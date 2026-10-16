@@ -26,6 +26,10 @@ def main():
         config = Path(workspace) / "smoke-config.json"
         config.write_text(json.dumps({"shell": "/bin/sh"}), encoding="utf-8")
         subprocess.run(["git", "init", "-q", workspace], check=True, capture_output=True)
+        subprocess.run(["git", "-C", workspace, "-c", "user.name=SunBook Test",
+                        "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                        "-c", "core.hooksPath=/dev/null", "commit", "--allow-empty", "-m", "SMOKE LOG"],
+                       check=True, capture_output=True)
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 110, 0, 0))
         env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor",
@@ -104,13 +108,23 @@ def main():
             wait_for(lambda: b"1 results" in received, "Search sidebar results")
             received.clear()
             click(3, 9)  # activity G
-            wait_for(lambda: b"CONTROL" in received and b"CHANGES" in received, "Git sidebar")
+            wait_for(lambda: b"CONTROL" in received and (b"CHANGES" in received or b"UNTRACKED" in received), "Git sidebar")
+            # Terminal diff rendering may skip unchanged spaces between words.
+            wait_for(lambda: b"GIT LOG" in received and b"SMOKE" in received, "inline Git log")
             os.write(master, b"s")  # stage first row: nested/needle.txt
             wait_for(lambda: subprocess.run(["git", "-C", workspace, "ls-files", "--error-unmatch", "--", "nested/needle.txt"],
                                             capture_output=True).returncode == 0, "Git sidebar stages file")
             staged = subprocess.check_output(["git", "-C", workspace, "show", ":nested/needle.txt"])
             if staged != b"nested sample":
                 raise AssertionError("Git sidebar staged an unexpected file")
+            received.clear()
+            os.write(master, b"d")
+            wait_for(lambda: b"Read-only" in received and b"INDEX" in received,
+                     "split comparison in editor")
+            click(90, 4)  # right comparison pane
+            os.write(master, b"x\x13\x17")  # read-only typing/save, then Ctrl+W closes diff
+            if nested.read_text() != "nested sample":
+                raise AssertionError("comparison changed the working file")
             click(3, 3)  # activity E restores Explorer
             received.clear()
             click(3, 6)  # activity S restores query and results
@@ -153,7 +167,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, toolbar, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, toolbar, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()
