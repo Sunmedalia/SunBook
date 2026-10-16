@@ -152,9 +152,8 @@ func newGitComparison(pair gitservice.Comparison) *gitComparison {
 func (a *App) comparing() bool { return a.comparison != nil && a.comparison.Active }
 func (a *App) drawComparison() {
 	c := a.comparison
-	w, _ := a.screen.Size()
 	r := a.rects[0]
-	width := w - r.X
+	width := a.editorArea.W
 	left := max(1, min(width-2, int(float64(width)*c.Ratio)))
 	c.Rects = [2]rect{{r.X, 3, left, r.H}, {r.X + left + 1, 3, max(0, width-left-1), r.H}}
 	c.Top = max(0, min(c.Top, max(0, len(c.Rows)-max(1, r.H))))

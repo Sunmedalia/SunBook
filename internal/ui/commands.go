@@ -72,7 +72,7 @@ func (a *App) registerCommands() {
 		}},
 		{"view.nextTab", "View: Next Tab", "ctrl+tab", func() { a.nextTab(1) }},
 		{"view.previousTab", "View: Previous Tab", "ctrl+shift+tab", func() { a.nextTab(-1) }},
-		{"view.panel", "View: Toggle Bottom Panel", "ctrl+j", func() {
+		{"view.panel", "View: Toggle Panel", "ctrl+j", func() {
 			a.panelVisible = !a.panelVisible
 			if !a.panelVisible {
 				a.focus = "editor"
@@ -80,6 +80,13 @@ func (a *App) registerCommands() {
 		}},
 		{"view.terminal", "View: Focus Terminal", "f4", a.toggleTerminal},
 		{"view.showTerminal", "Terminal: Show Terminal", "", a.showTerminal},
+		{"view.panelDock", "View: Toggle Panel Position (Bottom / Right)", "", func() {
+			if a.panelDock == "right" {
+				a.panelDock = "bottom"
+			} else {
+				a.panelDock = "right"
+			}
+		}},
 		{"view.hidePanel", "View: Hide Bottom Panel", "", a.hidePanel},
 		{"terminal.kill", "Terminal: Kill Shell Session", "", a.killTerminal},
 		{"view.nextFocus", "View: Focus Next Panel", "f6", a.cycleFocus},
@@ -192,6 +199,7 @@ Click / drag             Place cursor / select text
 Double / triple click    Select word / line
 Alt+click                Add cursor
 Mouse wheel              Scroll; drag borders to resize panes
+Drag file tab            Reorder tabs; drop on editor edge to split
 
 OPEN / QUICK OPEN
 Ctrl+L                   Edit folder path in Open
@@ -230,6 +238,7 @@ o                        Open working file for editing
 Esc                      Close comparison
 
 TERMINAL & DIALOGS
+Right / Bottom           Dock panel; drag its divider to resize
 Hide                     Hide terminal while keeping shell running
 Kill                     End shell session
 Ordinary terminal keys   Sent to the shell, including Ctrl+C

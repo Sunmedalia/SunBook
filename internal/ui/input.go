@@ -79,6 +79,11 @@ func keyName(e *tcell.EventKey) string {
 }
 func (a *App) key(e *tcell.EventKey) {
 	name := keyName(e)
+	if a.tabDrag != nil && name == "escape" {
+		a.tabDrag = nil
+		a.hoverHint = ""
+		return
+	}
 	if a.modal != nil {
 		a.modalKey(e, name)
 		return
@@ -479,6 +484,7 @@ func terminalKey(e *tcell.EventKey) uv.Key {
 }
 
 func (a *App) setModal(m *modal) {
+	a.tabDrag = nil
 	a.gitViewSeq++
 	a.completion = nil
 	a.completionDue = zeroTime
@@ -731,6 +737,10 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		}
 		return
 	}
+	if a.tabDrag != nil && !fresh {
+		a.moveTabDrag(x, y, press)
+		return
+	}
 	a.hoverCommand = ""
 	a.hoverHint = ""
 	for _, b := range a.buttons {
@@ -759,15 +769,16 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		case "panel":
 			_, h := a.screen.Size()
 			a.panelHeight = max(4, h-y-2)
+		case "panelSide":
+			w, _ := a.screen.Size()
+			a.panelWidth = max(28, w-x-1)
 		case "split":
-			w, _ := a.screen.Size()
 			start := a.rects[0].X
-			a.splitRatio = max(.2, min(.8, float64(x-start)/float64(max(1, w-start))))
+			a.splitRatio = max(.2, min(.8, float64(x-start)/float64(max(1, a.editorArea.W))))
 		case "diffSplit":
-			w, _ := a.screen.Size()
 			start := a.rects[0].X
 			if a.comparing() {
-				a.comparison.Ratio = max(.2, min(.8, float64(x-start)/float64(max(1, w-start))))
+				a.comparison.Ratio = max(.2, min(.8, float64(x-start)/float64(max(1, a.editorArea.W))))
 			}
 		case "gitLogResize":
 			a.resizeGitLog(y)
@@ -794,8 +805,11 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			a.hoverHint = "Drag up/down to resize Git log"
 			return
 		}
-		if a.panelVisible && a.panelRect.H > 0 && y == a.panelRect.Y-1 && x >= a.panelRect.X+38 {
+		if a.panelVisible && a.panelDivider.contains(x, y) {
 			a.drag = "panel"
+			if a.panelDivider.W == 1 {
+				a.drag = "panelSide"
+			}
 			return
 		}
 		if a.comparing() && x == a.comparison.Rects[1].X-1 && y >= 2 {
@@ -826,7 +840,9 @@ func (a *App) mouse(e *tcell.EventMouse) {
 				if x >= tab.X+tab.W-2 {
 					a.closeDocument(tab.Doc)
 				} else {
+					previousDoc := a.view().Doc
 					a.activate(tab.Doc)
+					a.tabDrag = &tabDragState{Doc: tab.Doc, Previous: previousDoc, SourceGroup: a.active, StartX: x, StartY: y, Slot: -1, Group: -1}
 				}
 				return
 			}

@@ -59,11 +59,21 @@ func (a *App) layout() {
 	width := max(0, w-start)
 	bottom := max(3, h-2)
 	a.panelRect = rect{}
+	a.panelDivider = rect{}
 	if a.panelVisible && h >= 14 {
-		ph := max(3, min(a.panelHeight, h-9))
-		a.panelRect = rect{start, h - 2 - ph, width, ph}
-		bottom = a.panelRect.Y - 1
+		if a.panelDock == "right" && width >= 64 {
+			pw := max(28, min(a.panelWidth, width-31))
+			width -= pw + 1
+			a.panelRect = rect{start + width + 1, 2, pw, h - 4}
+			a.panelDivider = rect{start + width, 1, 1, h - 3}
+		} else {
+			ph := max(3, min(a.panelHeight, h-9))
+			a.panelRect = rect{start, h - 2 - ph, width, ph}
+			bottom = a.panelRect.Y - 1
+			a.panelDivider = rect{start, bottom, width, 1}
+		}
 	}
+	a.editorArea = rect{start, 1, width, max(0, bottom-1)}
 	height := max(0, bottom-3)
 	a.rects[0] = rect{start, 3, width, height}
 	a.rects[1] = rect{}
@@ -122,8 +132,8 @@ func (a *App) draw() {
 		}
 	}
 	start := a.rects[0].X
-	a.fill(rect{start, 1, w - start, 1}, a.chrome)
-	a.drawTabs(start, w-start)
+	a.fill(rect{start, 1, a.editorArea.W, 1}, a.chrome)
+	a.drawTabs(start, a.editorArea.W)
 	if a.comparing() {
 		a.drawComparison()
 	} else {
@@ -133,7 +143,7 @@ func (a *App) draw() {
 		} else if rel, e := filepath.Rel(a.root, path); e == nil {
 			path = rel
 		}
-		a.put(start+1, 2, w-start-2, path, a.muted)
+		a.put(start+1, 2, a.editorArea.W-2, path, a.muted)
 		a.drawEditor(0)
 		if a.split && a.rects[1].W > 0 {
 			for y := 3; y < a.rects[1].Y+a.rects[1].H; y++ {
@@ -143,8 +153,18 @@ func (a *App) draw() {
 		}
 	}
 	if a.panelRect.H > 0 {
+		if a.panelDivider.W == 1 {
+			st := a.base.Foreground(a.colors.border)
+			if a.drag == "panelSide" {
+				st = st.Foreground(a.accent.GetForeground())
+			}
+			for y := a.panelDivider.Y; y < a.panelDivider.Y+a.panelDivider.H; y++ {
+				a.put(a.panelDivider.X, y, 1, "│", st)
+			}
+		}
 		a.drawPanel()
 	}
+	a.drawTabDrop()
 	hint := "F1 Commands   Ctrl+P Files   Ctrl+S Save   Ctrl+Q Quit"
 	switch a.focus {
 	case "git":
@@ -182,12 +202,14 @@ func (a *App) draw() {
 func (a *App) drawTree() {
 	r := a.sideRect
 	a.fill(r, a.chrome)
-	a.put(r.X+1, r.Y, min(9, r.W-2), "EXPLORER", a.chrome.Foreground(a.colors.muted).Bold(true))
+	a.drawSidebarHeader("EXPLORER", 8)
 	if r.W >= 20 {
 		a.drawButton(r.X+r.W-8, r.Y, "+", "file.new", "New file (Ctrl+N)", false)
 		a.drawButton(r.X+r.W-4, r.Y, "R", "explorer.refresh", "Refresh Explorer", false)
 	}
-	a.put(r.X+1, r.Y+1, r.W-2, filepath.Base(a.root), a.chrome.Bold(true))
+	rootStyle := a.sidebarBand(r.Y + 1)
+	countX := a.sidebarCount(r.X+r.W-1, r.Y+1, fmt.Sprint(len(a.tree)), rootStyle)
+	a.put(r.X+1, r.Y+1, countX-r.X-2, fitLabel(filepath.Base(a.root), countX-r.X-2), rootStyle.Bold(true))
 	a.treeFilterRect = rect{r.X + 1, r.Y + 2, max(1, r.W-6), 1}
 	field := a.treeFilterRect
 	a.treeQueryOffset = a.drawSidebarInput(field, a.treeQuery, a.treeQueryCursor, "Filter files (/)", "filter")
@@ -223,10 +245,16 @@ func (a *App) drawTree() {
 		}
 		style := a.chrome
 		if e.Dir {
-			style = style.Foreground(a.colors.folder)
+			style = style.Foreground(a.colors.folder).Bold(true)
 		}
 		if idx == a.treeSelected {
 			style = a.drawFileSelection(rect{r.X, r.Y + 3 + i, r.W, 1}, a.focus == "tree" || a.focus == "filter")
+		}
+		for depth := 0; depth < e.Depth; depth++ {
+			gx := r.X + 2 + depth*2
+			if gx < r.X+r.W-1 {
+				a.put(gx, r.Y+3+i, 1, "│", style.Foreground(a.colors.border))
+			}
 		}
 		x := r.X + 1 + e.Depth*2
 		end := r.X + r.W - 1
@@ -235,6 +263,7 @@ func (a *App) drawTree() {
 		x += a.drawFileIcon(x, r.Y+3+i, end-x, e.Path, e.Dir, a.expanded[e.Path], style)
 		a.put(x, r.Y+3+i, end-x, fitLabel(e.Name, end-x), style)
 	}
+	a.sidebarScroll(rect{r.X, r.Y + 3, r.W, max(0, r.H-3)}, a.treeTop, len(a.tree))
 }
 func (a *App) drawEditor(group int) {
 	v := a.views[group]
@@ -402,12 +431,29 @@ func (a *App) drawPanel() {
 	a.fill(rect{r.X, r.Y - 1, r.W, 1}, a.chrome)
 	right := r.X + r.W - 7
 	a.drawButton(right, r.Y-1, "Hide", "view.hidePanel", "Hide panel; keep shell running (Ctrl+J)", false)
-	if a.panel == "Terminal" && a.term != nil && r.W >= 48 {
+	if a.panel == "Terminal" && a.term != nil && r.W >= 28 {
 		right -= 7
 		a.drawButton(right, r.Y-1, "Kill", "terminal.kill", "End the shell session and close its panel", false)
 	}
+	label, hint := "Right", "Move panel to the right; keep the shell session"
+	if a.panelDock == "right" {
+		label, hint = "Bottom", "Move panel to the bottom; keep the shell session"
+	}
+	dockWidth := text.Width(label, 4) + 2
+	if right-dockWidth-1 >= r.X+1 {
+		right -= dockWidth + 1
+		a.drawButton(right, r.Y-1, label, "view.panelDock", hint, false)
+	}
 	x := r.X + 1
-	for _, v := range []struct{ name, id string }{{"Problems", "view.problems"}, {"Terminal", "view.showTerminal"}} {
+	choices := []struct{ name, id string }{{"Problems", "view.problems"}, {"Terminal", "view.showTerminal"}}
+	if r.W < 55 {
+		if a.panel == "Terminal" {
+			choices = choices[1:]
+		} else {
+			choices = choices[:1]
+		}
+	}
+	for _, v := range choices {
 		width := len(v.name) + 2
 		if x+width >= right {
 			continue
@@ -416,6 +462,9 @@ func (a *App) drawPanel() {
 	}
 	if right-x > 22 {
 		a.put(x+1, r.Y-1, right-x-2, "F4 Focus · Ctrl+J Hide", a.muted)
+	}
+	if x == r.X+1 {
+		a.put(x, r.Y-1, max(0, right-x-1), fitLabel(a.panel, right-x-1), a.accent.Bold(true))
 	}
 	switch a.panel {
 	case "Terminal":
@@ -533,13 +582,12 @@ func (a *App) drawCompletion() {
 	v := a.view()
 	r := a.rects[a.active]
 	row, col := v.Doc.Buffer.Position(v.Head())
-	w, h := a.screen.Size()
-	width := min(60, w-2)
+	width := max(1, min(60, r.W-2))
 	height := min(8, len(c.Items))
-	x := min(r.X+a.gutter(v)+text.Column(v.Doc.Buffer.Line(row), col, a.cfg.TabSize)-v.Left, w-width-1)
-	x = max(0, x)
+	x := min(r.X+a.gutter(v)+text.Column(v.Doc.Buffer.Line(row), col, a.cfg.TabSize)-v.Left, r.X+r.W-width)
+	x = max(r.X, x)
 	y := r.Y + row - v.Top + 1
-	if y+height >= h-2 {
+	if y+height > r.Y+r.H {
 		y = max(1, y-height-1)
 	}
 	top := max(0, c.Selected-height+1)

@@ -165,6 +165,7 @@ func (a *App) drawGitLog() {
 			a.put(r.X+2, y+1, r.W-3, fitLabel(revision.Author+" · "+revision.Age, r.W-3), style.Foreground(a.colors.muted))
 		}
 	}
+	a.sidebarScroll(a.gitLogRect, a.gitLogTop*2, len(a.gitLog)*2)
 }
 func (a *App) moveGitLog(delta int) {
 	a.gitLogSelected = max(0, min(a.gitLogSelected+delta, len(a.gitLog)-1))

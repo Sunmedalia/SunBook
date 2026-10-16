@@ -17,16 +17,24 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 
 ## Editor
 
-- VS Code style activity bar: `E` Explorer, `S` Search, `G` Source Control.
+- VS Code style activity bar with file, magnifier, and branch line icons for
+  Explorer, Search, and Source Control. Icons highlight on hover and selection;
+  hover also shows the panel name and shortcut.
   Each opens a persistent left sidebar; clicking the active activity hides it.
   Ctrl+B hides/restores the sidebar while the activity bar stays visible.
-  File tabs, draggable panel borders, and two side-by-side editors.
+  Drag file tabs to reorder them, or drop a tab on an editor's left/right edge
+  to open it in a split. Existing groups accept dropped tabs; drafts and cursor
+  positions are preserved. A marker previews the drop; Esc cancels a drag.
+  Panel borders can be dragged to resize them.
 - Clickable top toolbar: New, Open, Save, Find, Undo/Redo, Split, Terminal,
   More (command palette), and **Help** at the top right. Help opens a scrollable
   shortcut reference showing current keybindings and controls for each panel;
   Esc closes it. Narrow windows keep the actions that fit;
   all actions remain available under More/F1. Raised button faces show hover,
   press, active, and disabled states; hover shows an action hint.
+- Explorer, Search, and Source Control share inset headers, count badges,
+  section bands, and clear selections. Explorer adds tree guides; long lists
+  have scroll indicators. Git status and log refresh silently.
 - A slate blue workbench with warm gold accents, inset input fields, framed
   dialogs, and a compact status bar. Long file tabs keep their close button
   visible. The configured background, foreground, and accent also shape the
@@ -93,7 +101,7 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 | Ctrl+F / Ctrl+H | Find / replace in file |
 | Ctrl+Shift+F | Search workspace (ripgrep) |
 | Ctrl+G | Go to line[:column] |
-| Ctrl+B / Ctrl+J | Toggle sidebar / bottom panel |
+| Ctrl+B / Ctrl+J | Toggle sidebar / panel |
 | Ctrl+Shift+E | Show Explorer sidebar |
 | Ctrl+Shift+G | Show Source Control sidebar |
 | Ctrl+\ | Toggle split editor |
@@ -111,6 +119,12 @@ In the shell, ordinary keys including Ctrl+C go to the child process. F1, F4,
 and F6 remain editor focus controls; sidebar shortcuts also work with shell
 focus. Ctrl+J toggles the bottom panel even with shell
 focus. Click **Hide** in the panel header to hide it and keep the shell running.
+Click **Right** in the panel header to dock it on the right, and **Bottom** to
+return it below the editor. Drag the divider to resize its width or height.
+Position, size, output, and the shell session survive switching and hiding.
+Narrow windows temporarily use the bottom layout and restore the right dock
+when there is enough room. The command palette also includes **View: Toggle
+Panel Position (Bottom / Right)**.
 Click **Kill** to end the shell session and close its panel. F4 switches focus
 between the visible shell and the editor, and opens a hidden terminal again.
 Opening a terminal tab is lazy: it does not execute
@@ -161,7 +175,7 @@ Python environment, or `tsconfig.json` gives better results than loose files.
 
 ## Git and terminal
 
-Use `G`, Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
+Click the branch icon, use Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
 sidebar. Staged files, tracked changes, untracked files, and conflicts have
 separate counted groups and colored status badges. A file with both staged and
 unstaged edits appears in each group. Filenames stay readable in narrow sidebars;
@@ -202,7 +216,7 @@ paths are passed directly to Git, never interpolated into shell commands.
 Configure Git name/email and signing separately as usual. There is no push,
 branch management, or discard-changes command in this release.
 
-Use `S` or Ctrl+Shift+F for the Search sidebar. It searches after a short
+Click the magnifier or use Ctrl+Shift+F for the Search sidebar. It searches after a short
 typing pause, or immediately with Enter / Go, using ripgrep regexes and smart
 case. **Aa** forces case-sensitive matching, **W** matches whole words, and
 `.*` switches between regular expressions and literal text. **...** reveals

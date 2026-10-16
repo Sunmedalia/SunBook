@@ -39,7 +39,7 @@ func (a *App) initTheme() {
 }
 
 func (a *App) inputStyle(focused bool) tcell.Style {
-	style := a.base.Background(a.colors.inset)
+	style := a.base.Background(a.colors.inset).Underline(tcell.UnderlineStyleSolid, a.colors.border)
 	if focused {
 		style = style.Underline(tcell.UnderlineStyleSolid, a.accent.GetForeground())
 	}

@@ -44,7 +44,7 @@ func (a *App) searchRows() []sidebarRow {
 }
 func (a *App) drawSearchSidebar() {
 	r := a.sideRect
-	a.put(r.X+1, r.Y, r.W-2, "SEARCH", a.chrome.Foreground(a.colors.muted).Bold(true))
+	a.drawSidebarHeader("SEARCH", 4)
 	if a.searchError != "" {
 		a.drawButton(r.X+r.W-4, r.Y, "!", "search.error", "Show search error", false)
 	}
@@ -98,7 +98,12 @@ func (a *App) drawSearchSidebar() {
 	} else if len(a.searchResults) == 0 {
 		label = "No matches"
 	}
-	a.put(r.X+1, statusY, r.W-2, fitLabel(label, r.W-2), a.chrome.Foreground(a.colors.muted))
+	summaryStyle := a.sidebarBand(statusY).Foreground(a.colors.muted)
+	a.put(r.X+1, statusY, r.W-2, fitLabel(label, r.W-2), summaryStyle)
+	if len(a.searchResults) == 0 && a.searchQuery == "" && r.Y+r.H-a.searchBodyStart() >= 3 {
+		a.put(r.X+2, a.searchBodyStart()+1, r.W-4, "Search your workspace", a.chrome.Foreground(a.colors.muted))
+		a.put(r.X+2, a.searchBodyStart()+2, r.W-4, "Use ... for file filters", a.chrome.Foreground(a.colors.disabled))
+	}
 	rows := a.searchRows()
 	if len(rows) > 0 {
 		a.searchTop = max(0, min(a.searchTop, len(rows)-1))
@@ -111,20 +116,18 @@ func (a *App) drawSearchSidebar() {
 				prefix = "▸ "
 			}
 			name := filepath.Base(row.Group)
-			count := fmt.Sprintf(" %d", row.Index)
-			style := a.chrome.Foreground(a.colors.folder).Bold(true)
+			style := a.sidebarBand(y).Bold(true)
+			countX := a.sidebarCount(r.X+r.W-1, y, fmt.Sprint(row.Index), style)
 			a.put(r.X+1, y, 2, prefix, style)
 			n := a.drawFileIcon(r.X+3, y, r.W-4, row.Group, false, false, style)
-			a.put(r.X+3+n, y, r.W-4-n, fitLabel(name, r.W-4-n-len(count))+count, style)
+			a.put(r.X+3+n, y, countX-r.X-4-n, fitLabel(name, countX-r.X-4-n), style)
 			a.searchGroupHits = append(a.searchGroupHits, searchGroupHit{rect{r.X, y, r.W, 1}, row.Group})
 			continue
 		}
 		hit := a.searchResults[row.Index]
 		style := a.chrome
 		if row.Index == a.searchSelected {
-			style = a.selected
-			a.fill(rect{r.X, y, r.W, 1}, style)
-			a.put(r.X, y, 1, "▎", style.Foreground(a.accent.GetForeground()))
+			style = a.drawFileSelection(rect{r.X, y, r.W, 1}, a.focus == "search")
 		}
 		line := strings.TrimRight(hit.Text, "\r\n")
 		prefix := fmt.Sprintf("%d:%d ", hit.Line+1, text.Column(line, min(hit.Column, len(line)), a.cfg.TabSize)+1)
@@ -133,6 +136,7 @@ func (a *App) drawSearchSidebar() {
 		a.drawSearchSnippet(r.X+1+pw, y, r.W-2-pw, hit, style)
 		a.sideHits = append(a.sideHits, sideHit{rect{r.X, y, r.W, 1}, row.Index})
 	}
+	a.sidebarScroll(rect{r.X, a.searchBodyStart(), r.W, max(0, r.Y+r.H-a.searchBodyStart())}, a.searchTop, len(rows))
 }
 func (a *App) drawSearchSnippet(x, y, width int, h searchHit, style tcell.Style) {
 	if width <= 0 {

@@ -56,24 +56,6 @@ func (a *App) toggleSidebarView(view string) {
 		a.showSidebar(view)
 	}
 }
-func (a *App) drawActivityBar() {
-	r := a.activityRect
-	if r.W == 0 {
-		return
-	}
-	a.fill(r, a.base.Background(a.colors.inset))
-	for i, v := range []struct{ label, view, id, hint string }{{"E", "Explorer", "activity.explorer", "Explorer (Ctrl+Shift+E)"}, {"S", "Search", "activity.search", "Search workspace (Ctrl+Shift+F)"}, {"G", "Git", "activity.git", "Source Control (Ctrl+Shift+G)"}} {
-		y := r.Y + 1 + i*3
-		if y >= r.Y+r.H {
-			break
-		}
-		active := a.sidebar && a.sidebarView == v.view
-		a.drawButton(r.X+1, y, v.label, v.id, v.hint, active)
-		if active {
-			a.put(r.X, y, 1, "▎", a.accent.Background(a.colors.inset))
-		}
-	}
-}
 func (a *App) drawSidebar() {
 	a.fill(a.sideRect, a.chrome)
 	switch a.sidebarView {

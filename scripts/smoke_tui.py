@@ -77,6 +77,15 @@ def main():
             paste("SUNBOOK_KEEP=retained; printf 'SHELL_%s\\n' READY\n")
             wait_for(lambda: b"SHELL_READY" in received, "shell command")
             received.clear()
+            click(92, 18)  # Right docking control in the bottom panel header
+            wait_for(lambda: b"Bottom" in received, "right dock control")
+            paste('printf \'DOCK_%s\\n\' "$SUNBOOK_KEEP"\n')
+            wait_for(lambda: b"DOCK_retained" in received, "right dock preserves shell session")
+            received.clear()
+            click(92, 2)  # Bottom docking control in the right panel header
+            paste('printf \'BOTTOM_%s\\n\' "$SUNBOOK_KEEP"\n')
+            wait_for(lambda: b"BOTTOM_retained" in received, "bottom dock preserves shell session")
+            received.clear()
             os.write(master, b"\x0a\x1bOS")  # Ctrl+J hides, F4 opens same session
             paste('printf \'SESSION_%s\\n\' "$SUNBOOK_KEEP"\n')
             wait_for(lambda: b"SESSION_retained" in received, "Ctrl+J preserves shell")
@@ -180,6 +189,11 @@ def main():
             os.write(master, b"\r")
             wait_for(lambda: toolbar_path.exists() and toolbar_path.read_text() == "toolbar draft\n",
                      "toolbar-created file saves")
+            # Reorder a tab with a real SGR mouse drag; a caret previews insertion.
+            received.clear()
+            os.write(master, b"\x1b[<0;36;2M\x1b[<32;107;2M")
+            wait_for(lambda: "┃".encode() in received, "tab drag insertion marker")
+            os.write(master, b"\x1b[<0;107;2m")
             received.clear()
             os.write(master, b"\x1bOP")  # F1: palette
             wait_for(lambda: b"Command Palette" in received, "command palette")
@@ -206,7 +220,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, toolbar, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, toolbar, dock switching, tab drag, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()

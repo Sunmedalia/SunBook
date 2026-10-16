@@ -96,6 +96,10 @@ type App struct {
 	activityRect                                          rect
 	sideHits                                              []sideHit
 	sidebarWidth, panelHeight                             int
+	panelWidth                                            int
+	panelDock                                             string
+	editorArea, panelDivider                              rect
+	tabDrag                                               *tabDragState
 	focus, panel                                          string
 	panelVisible                                          bool
 	tree                                                  []treeEntry
@@ -220,7 +224,7 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 		root = real
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a := &App{screen: screen, cfg: cfg, root: root, ctx: ctx, cancel: cancel, updates: make(chan func(), 256), sidebar: true, sidebarWidth: 26, panelHeight: 12, focus: "editor", panel: "Terminal", splitRatio: .5, expanded: map[string]bool{root: true}, clients: map[string]*lsp.Client{}, starting: map[string]bool{}, serverErrors: map[string]string{}, opened: map[*editor.Document]*lsp.Client{}, diagnostics: map[string]lsp.Diagnostics{}, highlight: map[*editor.Document]highlights{}, highlightPending: map[*editor.Document]int{}}
+	a := &App{screen: screen, cfg: cfg, root: root, ctx: ctx, cancel: cancel, updates: make(chan func(), 256), sidebar: true, sidebarWidth: 26, panelHeight: 12, panelWidth: 40, focus: "editor", panel: "Terminal", splitRatio: .5, expanded: map[string]bool{root: true}, clients: map[string]*lsp.Client{}, starting: map[string]bool{}, serverErrors: map[string]string{}, opened: map[*editor.Document]*lsp.Client{}, diagnostics: map[string]lsp.Diagnostics{}, highlight: map[*editor.Document]highlights{}, highlightPending: map[*editor.Document]int{}}
 	for i := range a.viewCache {
 		a.viewCache[i] = map[*editor.Document]*editor.View{}
 	}
@@ -303,6 +307,7 @@ func (a *App) Run() error {
 			}
 			switch e := ev.(type) {
 			case *tcell.EventResize:
+				a.tabDrag = nil
 				a.screen.Sync()
 			case *tcell.EventPaste:
 				if e.Start() {
@@ -502,8 +507,9 @@ func (a *App) startTerminal() {
 	}
 	a.termSeq++
 	seq := a.termSeq
-	w, h := a.screen.Size()
-	s, e := terminal.Start(a.cfg.Shell, a.root, max(1, w), max(1, min(a.panelHeight, h-6)-1), func(data []byte) {
+	a.layout()
+	r := a.panelRect
+	s, e := terminal.Start(a.cfg.Shell, a.root, max(1, r.W), max(1, r.H), func(data []byte) {
 		a.post(func() {
 			if a.term != nil && seq == a.termSeq {
 				a.term.Feed(data)

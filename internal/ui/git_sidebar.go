@@ -122,7 +122,7 @@ func (a *App) drawGitSidebar() {
 	if r.H < 18 && a.focus == "gitFilter" {
 		a.focus = "git"
 	}
-	a.put(r.X+1, r.Y, r.W-6, "SOURCE CONTROL", a.chrome.Foreground(a.colors.muted).Bold(true))
+	a.drawSidebarHeader("SOURCE CONTROL", 4)
 	a.drawButton(r.X+r.W-4, r.Y, "R", "git.refresh", "Refresh Git status (F5)", false)
 	branch := a.git.Branch
 	if branch == "" {
@@ -136,8 +136,10 @@ func (a *App) drawGitSidebar() {
 		suffix = fmt.Sprintf(" ↑%d ↓%d", a.git.Ahead, a.git.Behind)
 	}
 	suffix = fitLabel(suffix, r.W-2)
-	a.put(r.X+1, r.Y+1, r.W-2, fitLabel(branch, r.W-2-text.Width(suffix, 4)), a.chrome.Bold(true))
-	a.put(r.X+r.W-1-text.Width(suffix, 4), r.Y+1, text.Width(suffix, 4), suffix, a.chrome.Foreground(a.colors.folder))
+	branchStyle := a.sidebarBand(r.Y + 1)
+	a.put(r.X+1, r.Y+1, 2, "↳", branchStyle.Foreground(a.colors.folder))
+	a.put(r.X+3, r.Y+1, r.W-4, fitLabel(branch, r.W-4-text.Width(suffix, 4)), branchStyle.Bold(true))
+	a.put(r.X+r.W-1-text.Width(suffix, 4), r.Y+1, text.Width(suffix, 4), suffix, branchStyle.Foreground(a.colors.folder))
 	a.gitListY = a.gitBodyStart()
 	a.layoutGitSections()
 	if a.gitError != "" {
@@ -194,6 +196,7 @@ func (a *App) drawGitSidebar() {
 			summary = a.gitOperation + "…"
 			style = style.Foreground(a.accent.GetForeground())
 		}
+		style = style.Background(a.sidebarBand(r.Y + 6).GetBackground())
 		a.put(r.X+1, r.Y+6, r.W-2, fitLabel(summary, r.W-2), style)
 	}
 	a.drawGitLog()
@@ -216,11 +219,19 @@ func (a *App) drawGitSidebar() {
 	for y, i := a.gitListY, a.gitTop; y < a.gitChangesRect.Y+a.gitChangesRect.H && i < len(rows); y, i = y+1, i+1 {
 		row := rows[i]
 		if row.Heading {
-			style := a.chrome.Foreground(a.colors.muted).Bold(true)
+			style := a.sidebarBand(y).Foreground(a.colors.muted).Bold(true)
 			if row.Group == "CONFLICTS" {
 				style = style.Foreground(a.colors.danger)
 			}
-			a.put(r.X+1, y, r.W-6, fitLabel(row.Label, r.W-6), style)
+			fields := strings.Fields(row.Label)
+			count := ""
+			if len(fields) > 1 {
+				count = fields[len(fields)-1]
+			}
+			a.sidebarGroup(y, row.Group, count, 4)
+			if row.Group == "CONFLICTS" {
+				a.put(r.X+1, y, r.W-10, fitLabel(row.Group, r.W-10), style)
+			}
 			id, hint, label := "git.stage"+row.Group, "Stage entire group, including filtered files", "+"
 			if row.Group == "STAGED" {
 				id, hint, label = "git.unstageAll", "Unstage all files", "−"
@@ -232,9 +243,7 @@ func (a *App) drawGitSidebar() {
 		f := a.git.Files[e.File]
 		style := a.chrome
 		if row.Index == a.gitSelected {
-			style = a.selected
-			a.fill(rect{r.X, y, r.W, 1}, style)
-			a.put(r.X, y, 1, "▎", style.Foreground(a.accent.GetForeground()))
+			style = a.drawFileSelection(rect{r.X, y, r.W, 1}, a.focus == "git")
 		}
 		status := f.Worktree
 		if e.Staged {
@@ -266,6 +275,7 @@ func (a *App) drawGitSidebar() {
 		}
 		a.sideHits = append(a.sideHits, sideHit{rect{r.X, y, r.W, 1}, row.Index})
 	}
+	a.sidebarScroll(a.gitChangesRect, a.gitTop, len(rows))
 }
 func (a *App) moveGitSelection(delta int) {
 	a.gitSelected = max(0, min(a.gitSelected+delta, len(a.gitEntries())-1))
