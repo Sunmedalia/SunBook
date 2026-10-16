@@ -269,10 +269,11 @@ func (a *App) readClipboard() {
 	v := a.view()
 	version := v.Doc.Buffer.Version
 	focus := a.focus
+	editingOpenPath := m != nil && m.Open != nil && m.Open.EditingPath
 	go func() {
 		s, system := a.clipboard.Read()
 		a.post(func() {
-			if a.modal != m || a.focus != focus || a.view() != v || v.Doc.Buffer.Version != version {
+			if a.modal != m || a.focus != focus || a.view() != v || v.Doc.Buffer.Version != version || (m != nil && m.Open != nil && m.Open.EditingPath != editingOpenPath) {
 				a.notify("Paste cancelled because focus or document changed")
 				return
 			}

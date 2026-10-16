@@ -257,10 +257,12 @@ func (a *App) drawGitSidebar() {
 		}
 		a.put(r.X+1, y, 1, status, style.Foreground(color).Bold(true))
 		name := filepath.Base(f.Path)
-		a.put(r.X+3, y, r.W-4, fitLabel(name, r.W-4), style)
+		n := a.drawFileIcon(r.X+3, y, r.W-4, f.Path, false, false, style)
+		nameX, nameWidth := r.X+3+n, r.W-4-n
+		a.put(nameX, y, nameWidth, fitLabel(name, nameWidth), style)
 		nameW := text.Width(name, 4)
-		if dir := filepath.Dir(f.Path); dir != "." && nameW+3 < r.W-4 {
-			a.put(r.X+4+nameW, y, r.W-5-nameW, tailLabel(dir, r.W-5-nameW), style.Foreground(a.colors.muted))
+		if dir := filepath.Dir(f.Path); dir != "." && nameW+3 < nameWidth {
+			a.put(nameX+nameW+1, y, nameWidth-nameW-1, tailLabel(dir, nameWidth-nameW-1), style.Foreground(a.colors.muted))
 		}
 		a.sideHits = append(a.sideHits, sideHit{rect{r.X, y, r.W, 1}, row.Index})
 	}

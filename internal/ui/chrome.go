@@ -29,10 +29,6 @@ func fitLabel(s string, width int) string {
 	return s[:end] + "…"
 }
 
-func tabWidth(d *editor.Document) int {
-	return min(28, text.Width(d.Name(), 4)+6)
-}
-
 func (a *App) drawTabs(start, width int) {
 	a.tabs = nil
 	docs := append([]*editor.Document(nil), a.docs...)
@@ -45,7 +41,15 @@ func (a *App) drawTabs(start, width int) {
 		}
 		return d.Name()
 	}
-	twidth := func(d *editor.Document) int { return min(width, 28, text.Width(name(d), 4)+6) }
+	path := func(d *editor.Document) string {
+		if d != nil {
+			return d.Path
+		}
+		return a.comparison.Pair.Path
+	}
+	twidth := func(d *editor.Document) int {
+		return min(width, 28, text.Width(name(d), 4)+6+a.fileIconSpan(path(d), false, false))
+	}
 	activeIndex := 0
 	for i, d := range docs {
 		if d == nil && a.comparing() || d != nil && !a.comparing() && d == a.view().Doc {
@@ -76,7 +80,8 @@ func (a *App) drawTabs(start, width int) {
 		if active {
 			a.put(x, 1, 1, "▎", a.accent)
 		}
-		a.put(x+2, 1, tw-6, fitLabel(name(d), tw-6), style)
+		n := a.drawFileIcon(x+2, 1, max(0, tw-6), path(d), false, false, style)
+		a.put(x+2+n, 1, tw-6-n, fitLabel(name(d), tw-6-n), style)
 		if d != nil && d.Dirty() {
 			a.put(x+tw-4, 1, 1, "•", style.Foreground(a.accent.GetForeground()))
 		}

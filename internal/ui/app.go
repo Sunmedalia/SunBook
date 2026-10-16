@@ -49,6 +49,8 @@ type modal struct {
 	Accept                       func(bool)
 	Complete, Parent             func()
 	Title, Input, Hint           string
+	InputRect                    rect
+	InputOffset                  int
 	Cursor                       int
 	Items, Visible               []item
 	Selected, Top                int

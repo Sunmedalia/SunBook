@@ -96,6 +96,17 @@ func (a *App) draw() {
 	a.gitMessageRect = rect{}
 	a.gitFilterRect = rect{}
 	a.sideHits = nil
+	a.modalRect = rect{}
+	if m := a.modal; m != nil {
+		m.InputRect = rect{}
+		m.ListY = 0
+		m.ListH = 0
+		if s := m.Open; s != nil {
+			s.UpRect = rect{}
+			s.GoRect = rect{}
+			s.PathRect = rect{}
+		}
+	}
 	if w < 24 || h < 7 {
 		a.put(0, 0, w, "SunBook — enlarge terminal", a.accent)
 		a.screen.Show()
@@ -210,17 +221,19 @@ func (a *App) drawTree() {
 				prefix = "▾ "
 			}
 		}
-		label := strings.Repeat("  ", e.Depth) + prefix + e.Name
 		style := a.chrome
 		if e.Dir {
 			style = style.Foreground(a.colors.folder)
 		}
-		if idx == a.treeSelected && a.focus == "tree" {
-			style = a.selected
-			a.fill(rect{r.X, r.Y + 3 + i, r.W, 1}, style)
-			a.put(r.X, r.Y+3+i, 1, "▎", style.Foreground(a.accent.GetForeground()))
+		if idx == a.treeSelected {
+			style = a.drawFileSelection(rect{r.X, r.Y + 3 + i, r.W, 1}, a.focus == "tree" || a.focus == "filter")
 		}
-		a.put(r.X+1, r.Y+3+i, r.W-2, label, style)
+		x := r.X + 1 + e.Depth*2
+		end := r.X + r.W - 1
+		a.put(x, r.Y+3+i, max(0, min(2, end-x)), prefix, style.Foreground(a.colors.muted))
+		x += 2
+		x += a.drawFileIcon(x, r.Y+3+i, end-x, e.Path, e.Dir, a.expanded[e.Path], style)
+		a.put(x, r.Y+3+i, end-x, fitLabel(e.Name, end-x), style)
 	}
 }
 func (a *App) drawEditor(group int) {
@@ -565,12 +578,12 @@ func (a *App) drawModal() {
 	if m.Open != nil && m.Open.Quick && m.Selected >= 0 && m.Selected < len(m.Visible) {
 		subtitle = m.Visible[m.Selected].Path
 	}
-	if subtitle != "" {
+	if subtitle != "" && (m.Open == nil || m.Open.Quick) {
 		a.put(x+2, y+1, width-4, tailLabel(subtitle, width-4), a.chrome.Foreground(a.colors.muted))
 	}
 	contentY := y + 2
 	if m.InputEnabled {
-		fieldStyle := a.inputStyle(true)
+		fieldStyle := a.inputStyle(m.Open == nil || !m.Open.EditingPath)
 		a.fill(rect{x + 2, contentY, width - 4, 1}, fieldStyle)
 		inputWidth := max(1, width-4)
 		offset := 0
@@ -582,10 +595,17 @@ func (a *App) drawModal() {
 		} else {
 			a.put(x+2, contentY, inputWidth, m.Input[offset:], fieldStyle)
 		}
-		a.screen.ShowCursor(x+2+text.Width(m.Input[offset:m.Cursor], a.cfg.TabSize), contentY)
+		m.InputRect = rect{x + 2, contentY, inputWidth, 1}
+		m.InputOffset = offset
+		if m.Open == nil || !m.Open.EditingPath {
+			a.screen.ShowCursor(x+2+text.Width(m.Input[offset:m.Cursor], a.cfg.TabSize), contentY)
+		}
 		contentY += 2
 	} else {
 		a.screen.HideCursor()
+	}
+	if m.Open != nil && !m.Open.Quick {
+		a.drawOpenNavigation(m, rect{x + 2, y + 1, width - 4, 1})
 	}
 	if len(m.Body) > 0 && len(m.Items) > 0 {
 		for i := 0; i < min(5, len(m.Body)) && contentY < y+height-5; i++ {
@@ -614,8 +634,12 @@ func (a *App) drawModal() {
 			it := m.Visible[idx]
 			style := a.chrome
 			if idx == m.Selected {
-				style = a.selected
-				a.fill(rect{x + 1, contentY + i, width - 2, 1}, style)
+				if m.Open != nil {
+					style = a.drawFileSelection(rect{x + 1, contentY + i, width - 2, 1}, !m.Open.EditingPath)
+				} else {
+					style = a.selected
+					a.fill(rect{x + 1, contentY + i, width - 2, 1}, style)
+				}
 			}
 			labelWidth := width - 4
 			if it.Detail != "" {
@@ -623,7 +647,13 @@ func (a *App) drawModal() {
 				labelWidth -= detailWidth + 2
 				a.put(x+width-detailWidth-2, contentY+i, detailWidth, fitLabel(it.Detail, detailWidth), style.Foreground(a.colors.muted))
 			}
-			a.put(x+2, contentY+i, labelWidth, fitLabel(it.Label, labelWidth), style)
+			labelX := x + 2
+			if m.Open != nil {
+				n := a.drawFileIcon(labelX, contentY+i, labelWidth, it.Path, it.Dir, false, style)
+				labelX += n
+				labelWidth -= n
+			}
+			a.put(labelX, contentY+i, labelWidth, fitLabel(it.Label, labelWidth), style)
 		}
 	} else if len(m.Body) > 0 {
 		for i := 0; i < available && i+m.Top < len(m.Body); i++ {

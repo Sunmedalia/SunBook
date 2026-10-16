@@ -33,9 +33,19 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   directories. Click the field, or press `/` / Ctrl+F
   while the Explorer is focused. Matching is case-insensitive and fuzzy.
   Down selects results, Enter opens a file, and Esc or `x` clears the filter.
+  The selected file keeps its highlight and left marker after focus moves to
+  the editor. Open / Quick Open also keep a distinct marker beside their icons.
   Normal expanded folders are restored when the filter is cleared. With
   ripgrep installed, filtering respects ignore rules; the fallback skips
   `.git`, `node_modules`, and `vendor` and lists up to 20,000 files.
+- File type icons appear in Explorer, Open / Quick Open, editor tabs, Search,
+  and Git file lists. Folders show separate open/closed marks; source files,
+  documents, settings, images, and archives have distinct colors and symbols.
+  Language marks follow filename extensions: `Go`, `Py`, `JS`, `JSX`, `TS`,
+  `TSX`, `C`, `C++`, `C#`, `Jav`, `Kt`, `Sw`, `Rb`, `PHP`, `Lua`, and more.
+  Vue / Svelte, HTML / XML, CSS / Sass / Less, and JSON / YAML / TOML also
+  have separate marks. Matching is case-insensitive; TypeScript declarations
+  use `dTS`. Icons use standard characters, without a patched font.
 - Click, drag, double-click a word, triple-click a line, scroll with the wheel.
 - Alt+click adds a cursor. Ctrl+D selects a word and then its next occurrence.
 - Shared documents in splits; independent selections and scroll positions.
@@ -48,8 +58,11 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   displayed text, including tabs and wide characters. Recent files last for
   the current session.
 - Ctrl+O opens a file browser with folders first, path completion with Tab,
-  and Alt+Up to go to the parent directory. Enter or click opens a file or
-  browses a folder. Relative, absolute, and `~/` paths are supported. A new
+  and an **↑ Up** button (or Alt+Up) to go to the parent directory. Click the
+  directory path or press Ctrl+L to edit it, then Enter / **Go** to navigate.
+  Tab returns from the path bar to the filename field; Esc cancels path edits
+  before closing the dialog. Invalid paths keep the current folder visible.
+  Enter or click on a list row opens a file or browses a folder. Relative, absolute, and `~/` paths are supported. A new
   filename opens an empty buffer that is written only when saved. Ctrl+Enter
   in either picker opens the file in the other editor group (when the terminal
   can report that key combination). Errors keep the picker open.

@@ -134,9 +134,19 @@ def main():
             received.clear()
             click(20, 1)  # top Open works regardless of sidebar focus
             wait_for(lambda: b"Open File" in received, "Open browser")
-            paste("nested/")
-            wait_for(lambda: b"needle.txt" in received,
-                     "Open directory contents")
+            os.write(master, b"\x0c")  # Ctrl+L: edit the directory path
+            paste(str(nested.parent))
+            os.write(master, b"\r")
+            wait_for(lambda: b"needle.txt" in received, "editable Open directory path")
+            received.clear()
+            click(12, 6)  # ↑ Up in the Open dialog header (110x32)
+            wait_for(lambda: b"notes.txt" in received and b"nested" in received,
+                     "Open parent button")
+            os.write(master, b"\x0c")
+            paste(str(nested.parent))
+            os.write(master, b"\r")
+            received.clear()
+            wait_for(lambda: b"needle.txt" in received, "return to nested directory")
             received.clear()
             os.write(master, b"\r")
             wait_for(lambda: b"nested sample" in received, "Open browser opens selected file")

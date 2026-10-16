@@ -45,3 +45,17 @@ func (a *App) inputStyle(focused bool) tcell.Style {
 	}
 	return style
 }
+
+// A file stays visibly selected when opening it transfers focus to the editor.
+// Keep the marker separate from the icon so both remain readable in narrow rows.
+func (a *App) drawFileSelection(r rect, focused bool) tcell.Style {
+	style := a.selected
+	if focused {
+		style = style.Bold(true)
+	} else {
+		style = a.chrome.Background(mix(a.chrome.GetBackground(), a.accent.GetForeground(), 16))
+	}
+	a.fill(r, style)
+	a.put(r.X, r.Y, 1, "▎", style.Foreground(a.accent.GetForeground()).Bold(true))
+	return style
+}

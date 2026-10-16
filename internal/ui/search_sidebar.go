@@ -113,7 +113,9 @@ func (a *App) drawSearchSidebar() {
 			name := filepath.Base(row.Group)
 			count := fmt.Sprintf(" %d", row.Index)
 			style := a.chrome.Foreground(a.colors.folder).Bold(true)
-			a.put(r.X+1, y, r.W-2, prefix+fitLabel(name, r.W-4-len(count))+count, style)
+			a.put(r.X+1, y, 2, prefix, style)
+			n := a.drawFileIcon(r.X+3, y, r.W-4, row.Group, false, false, style)
+			a.put(r.X+3+n, y, r.W-4-n, fitLabel(name, r.W-4-n-len(count))+count, style)
 			a.searchGroupHits = append(a.searchGroupHits, searchGroupHit{rect{r.X, y, r.W, 1}, row.Group})
 			continue
 		}

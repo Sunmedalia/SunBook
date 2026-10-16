@@ -536,6 +536,10 @@ func (a *App) modalInsert(s string) {
 	if m == nil || !m.InputEnabled {
 		return
 	}
+	if m.Open != nil && m.Open.EditingPath {
+		a.insertOpenPath(m, s)
+		return
+	}
 	m.Input = m.Input[:m.Cursor] + s + m.Input[m.Cursor:]
 	m.Cursor += len(s)
 	a.filterModal()
@@ -561,6 +565,9 @@ func (a *App) modalAccept() {
 }
 func (a *App) modalKey(e *tcell.EventKey, name string) {
 	m := a.modal
+	if a.openPathKey(m, e, name) {
+		return
+	}
 	switch name {
 	case "ctrl+enter":
 		if m.Accept != nil {
@@ -699,6 +706,9 @@ func (a *App) mouse(e *tcell.EventMouse) {
 	a.lastButtons = buttons
 	if a.modal != nil {
 		m := a.modal
+		if a.openNavigationMouse(m, x, y, fresh) {
+			return
+		}
 		if wheel != 0 {
 			if len(m.Body) > 0 && len(m.Items) > 0 {
 				m.BodyTop = max(0, min(max(0, len(m.Body)-5), m.BodyTop+wheel))
@@ -712,6 +722,10 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			idx := y - m.ListY + m.Top
 			if idx >= 0 && idx < len(m.Visible) {
 				m.Selected = idx
+				if m.Open != nil {
+					m.Open.EditingPath = false
+					m.Open.SelectPath = false
+				}
 				a.modalAccept()
 			}
 		}

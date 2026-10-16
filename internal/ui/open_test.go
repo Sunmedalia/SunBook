@@ -220,3 +220,125 @@ func TestQuickOpenNumericFilenameAndDeletedFile(t *testing.T) {
 		t.Fatal("deleted file opened as new buffer")
 	}
 }
+
+func TestOpenNavigationButtonsAndEditablePath(t *testing.T) {
+	a, _ := testApp(t)
+	dir := filepath.Join(a.root, "nested")
+	file := filepath.Join(dir, "main.go")
+	writeOpenFixture(t, file, "package main\n")
+	writeOpenFixture(t, filepath.Join(dir, "readme.md"), "# Hello\n")
+	original := a.view()
+	a.fileOpen()
+	waitPicker(t, a)
+	a.draw()
+	m := a.modal
+	s := m.Open
+	click(a, s.PathRect.X+1, s.PathRect.Y)
+	a.key(tcell.NewEventKey(tcell.KeyCtrlU, "", 0))
+	a.paste("nested")
+	a.draw()
+	click(a, s.GoRect.X+1, s.GoRect.Y)
+	waitPicker(t, a)
+	a.draw()
+	if s.Dir != dir || s.Path != dir || s.EditingPath || len(m.Visible) != 2 {
+		t.Fatal("Go did not browse typed path", s.Dir, s.Path, m.Hint)
+	}
+	// The file type mark has its own cells/color and leaves the selectable name intact.
+	x := a.modalRect.X + 2
+	mark, st, _ := a.screen.Get(x, m.ListY)
+	next, _, _ := a.screen.Get(x+1, m.ListY)
+	if mark+next != "Go" || st.GetBackground() != a.selected.GetBackground() || m.Visible[0].Label != "main.go" {
+		t.Fatal("typed file icon not rendered", mark, next, m.Visible)
+	}
+	click(a, s.UpRect.X+1, s.UpRect.Y)
+	waitPicker(t, a)
+	a.draw()
+	if s.Dir != a.root || s.Path != a.root || a.view() != original {
+		t.Fatal("Up changed document or failed to browse parent")
+	}
+	// Clicking the name field returns keyboard input to filtering.
+	click(a, s.PathRect.X+1, s.PathRect.Y)
+	click(a, m.InputRect.X, m.InputRect.Y)
+	a.paste("nested")
+	if s.EditingPath || m.Input != "nested" {
+		t.Fatal("name field did not regain focus")
+	}
+	a.draw()
+	click(a, a.modalRect.X+6, m.ListY)
+	waitPicker(t, a)
+	if s.Dir != dir {
+		t.Fatal("folder row stopped responding after icon added")
+	}
+}
+func TestOpenPathKeyboardRelativeNavigationAndErrorRecovery(t *testing.T) {
+	a, _ := testApp(t)
+	dir := filepath.Join(a.root, "中文 目录")
+	file := filepath.Join(dir, "note.txt")
+	writeOpenFixture(t, file, "text")
+	a.fileOpen()
+	waitPicker(t, a)
+	m := a.modal
+	s := m.Open
+	// A path typed in the file field changes the displayed directory too.
+	openInput(a, "中文 目录/")
+	waitPicker(t, a)
+	a.key(tcell.NewEventKey(tcell.KeyCtrlL, "", 0))
+	a.paste("..")
+	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	waitPicker(t, a)
+	if s.Dir != a.root || s.EditingPath {
+		t.Fatal("relative path resolved against wrong folder", s.Dir)
+	}
+	a.key(tcell.NewEventKey(tcell.KeyCtrlL, "", 0))
+	a.paste("中文 目录")
+	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	waitPicker(t, a)
+	if s.Dir != dir || s.Path != dir {
+		t.Fatal("Unicode folder path failed", m.Hint)
+	}
+	a.key(tcell.NewEventKey(tcell.KeyCtrlL, "", 0))
+	a.paste("missing/folder")
+	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	if !s.EditingPath || s.Dir != dir || len(m.Visible) != 1 || m.Hint == "" {
+		t.Fatal("bad path discarded last directory")
+	}
+	a.key(tcell.NewEventKey(tcell.KeyEsc, "", 0))
+	if a.modal != m || s.EditingPath || s.Path != dir {
+		t.Fatal("Escape did not cancel path draft")
+	}
+	a.key(tcell.NewEventKey(tcell.KeyEsc, "", 0))
+	if a.modal != nil {
+		t.Fatal("second Escape did not close dialog")
+	}
+}
+func TestOpenPathDraftSurvivesDirectoryReadAndGraphemeEditing(t *testing.T) {
+	a, mt := testApp(t)
+	a.fileOpen()
+	m := a.modal
+	s := m.Open
+	a.key(tcell.NewEventKey(tcell.KeyCtrlL, "", 0))
+	a.paste("中👩‍💻é")
+	a.key(tcell.NewEventKey(tcell.KeyBackspace, "", 0))
+	waitPicker(t, a)
+	if s.Path != "中👩‍💻" || s.PathCursor != len(s.Path) || !s.EditingPath {
+		t.Fatal("directory completion replaced draft or split grapheme", s.Path)
+	}
+	for _, size := range []vt.Coord{{X: 80, Y: 24}, {X: 32, Y: 12}, {X: 6, Y: 3}, {X: 110, Y: 32}} {
+		mt.SetSize(size)
+		a.screen.Sync()
+		a.draw()
+		w, _ := a.screen.Size()
+		for _, r := range []rect{s.UpRect, s.PathRect, s.GoRect} {
+			if r.W > 0 && (r.X < 0 || r.X+r.W > w) {
+				t.Fatal("navigation control outside dialog", r, size)
+			}
+		}
+	}
+	a.key(tcell.NewEventKey(tcell.KeyCtrlA, "", 0))
+	a.paste(a.root)
+	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	waitPicker(t, a)
+	if s.Path != a.root || s.EditingPath {
+		t.Fatal("whole-path replacement failed")
+	}
+}
