@@ -154,6 +154,7 @@ func (a *App) gitDiff(staged bool) {
 	root, workspace := a.git.Root, a.root
 	a.gitViewSeq++
 	seq := a.gitViewSeq
+	base := a.base
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 		defer cancel()
@@ -161,6 +162,7 @@ func (a *App) gitDiff(staged bool) {
 		var view *gitComparison
 		if err == nil {
 			view = newGitComparison(pair)
+			view.highlight(base)
 		}
 		a.post(func() {
 			if seq != a.gitViewSeq || workspace != a.root {

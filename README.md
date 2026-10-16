@@ -197,7 +197,9 @@ hover shows the full path. Branch arrows show ahead/behind counts from local ref
 Click a row or press `d`/Enter to open an editor comparison tab. Staged changes
 compare HEAD with Index; unstaged changes compare Index with the saved worktree.
 Added and removed rows are aligned and colored, with line numbers and synchronized
-vertical scrolling. Click either pane to focus it; Tab switches sides, Left/Right
+vertical scrolling. Both snapshots use the editor's language syntax highlighting
+while keeping red/green change backgrounds, including multiline comments and
+strings. Click either pane to focus it; Tab switches sides, Left/Right
 pan, `n`/`p` jump between changes, and the divider can be dragged. The comparison
 is read-only: `o` opens the working file for editing; Ctrl+W / the tab's close
 button restores the original editor. Open buffers and unsaved edits are preserved.

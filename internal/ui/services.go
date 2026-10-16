@@ -13,10 +13,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/gdamore/tcell/v3"
 	"sunbook/internal/config"
 	"sunbook/internal/editor"
 	"sunbook/internal/lsp"
@@ -121,35 +117,7 @@ func (a *App) runHighlight(d *editor.Document) {
 		return
 	}
 	go func() {
-		lex := lexers.Match(path)
-		if lex == nil {
-			lex = lexers.Fallback
-		}
-		lex = chroma.Coalesce(lex)
-		iterator, e := lex.Tokenise(nil, s)
-		var spans []tokenSpan
-		if e == nil {
-			offset := 0
-			theme := styles.Get("github-dark")
-			if theme == nil {
-				theme = styles.Fallback
-			}
-			for token := iterator(); token != chroma.EOF; token = iterator() {
-				style := bg
-				entry := theme.Get(token.Type)
-				if entry.Colour.IsSet() {
-					style = style.Foreground(tcell.NewRGBColor(int32(entry.Colour.Red()), int32(entry.Colour.Green()), int32(entry.Colour.Blue())))
-				}
-				if entry.Bold == chroma.Yes {
-					style = style.Bold(true)
-				}
-				if entry.Italic == chroma.Yes {
-					style = style.Italic(true)
-				}
-				spans = append(spans, tokenSpan{offset, offset + len(token.Value), style})
-				offset += len(token.Value)
-			}
-		}
+		spans := syntaxSpans(path, s, bg)
 		a.post(func() {
 			delete(a.highlightRunning, d)
 			for _, open := range a.docs {

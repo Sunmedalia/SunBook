@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/rivo/uniseg"
 	gitservice "sunbook/internal/git"
 	"sunbook/internal/text"
 )
@@ -28,6 +30,8 @@ type gitComparison struct {
 	Active             bool
 	Added, Removed     int
 	OldLines, NewLines int
+	LineOffsets        [2][]int
+	Highlights         [2][]tokenSpan
 }
 
 var hunkHeader = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
@@ -46,6 +50,13 @@ func newGitComparison(pair gitservice.Comparison) *gitComparison {
 	}
 	old, new := comparisonLines(pair.Old), comparisonLines(pair.New)
 	c.OldLines, c.NewLines = len(old), len(new)
+	for pane, lines := range [2][]string{old, new} {
+		offset := 0
+		for _, line := range lines {
+			c.LineOffsets[pane] = append(c.LineOffsets[pane], offset)
+			offset += len(line) + 1
+		}
+	}
 	oi, ni := 0, 0
 	appendRow := func(removed, added bool) {
 		r := comparisonRow{Removed: removed, Added: added}
@@ -149,6 +160,12 @@ func newGitComparison(pair gitservice.Comparison) *gitComparison {
 	}
 	return c
 }
+func (c *gitComparison) highlight(base tcell.Style) {
+	if !c.Pair.Binary {
+		c.Highlights[0] = syntaxSpans(c.Pair.Path, c.Pair.Old, base)
+		c.Highlights[1] = syntaxSpans(c.Pair.Path, c.Pair.New, base)
+	}
+}
 func (a *App) comparing() bool { return a.comparison != nil && a.comparison.Active }
 func (a *App) drawComparison() {
 	c := a.comparison
@@ -196,13 +213,55 @@ func (a *App) drawComparison() {
 				}
 				a.put(pr.X+gutter-1, y, 1, marker, style.Foreground(color))
 			}
-			line = expandTabs(line, a.cfg.TabSize)
-			offset := text.Offset(line, c.Left[pane], a.cfg.TabSize)
-			a.put(pr.X+gutter, y, pr.W-gutter, line[offset:], style)
+			offset := 0
+			if number > 0 {
+				offset = c.LineOffsets[pane][number-1]
+			}
+			a.drawComparisonLine(pr.X+gutter, y, pr.W-gutter, line, offset, c.Left[pane], c.Highlights[pane], style)
 		}
 	}
 	for y := 2; y < r.Y+r.H; y++ {
 		a.put(c.Rects[1].X-1, y, 1, "│", a.base.Foreground(a.colors.border))
+	}
+}
+func (a *App) drawComparisonLine(x, y, width int, line string, offset, left int, spans []tokenSpan, base tcell.Style) {
+	if width <= 0 {
+		return
+	}
+	if len(spans) == 0 {
+		line = expandTabs(line, a.cfg.TabSize)
+		a.put(x, y, width, line[text.Offset(line, left, a.cfg.TabSize):], base)
+		return
+	}
+	span := sort.Search(len(spans), func(i int) bool { return spans[i].End > offset })
+	column := 0
+	g := uniseg.NewGraphemes(line)
+	for g.Next() {
+		lo, _ := g.Positions()
+		position := offset + lo
+		for span < len(spans) && spans[span].End <= position {
+			span++
+		}
+		style := base
+		if span < len(spans) && spans[span].Start <= position {
+			// Syntax controls text color and attributes; the comparison owns the
+			// red/green row background, including spaces and tabs.
+			style = spans[span].Style.Background(base.GetBackground())
+		}
+		w := max(1, g.Width())
+		start := column - left
+		if g.Str() == "\t" {
+			w = a.cfg.TabSize - column%a.cfg.TabSize
+			for dx := max(0, start); dx < min(width, start+w); dx++ {
+				a.put(x+dx, y, 1, " ", style)
+			}
+		} else if start >= 0 && start+w <= width {
+			a.put(x+start, y, w, g.Str(), style)
+		}
+		column += w
+		if start >= width {
+			break
+		}
 	}
 }
 func (a *App) closeComparison() { a.gitViewSeq++; a.comparison = nil; a.focus = "editor" }
