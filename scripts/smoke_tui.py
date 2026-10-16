@@ -183,6 +183,21 @@ def main():
             # Let the legacy terminal parser finish Escape before sending a mouse sequence.
             wait_for(lambda: b"\x1b[?25h" in received, "Help closes and restores editor cursor")
 
+            # Theme selection applies live and preserves the active config.
+            for theme, label in [("github-light", "GitHub Light"), ("sunbook", "SunBook")]:
+                received.clear()
+                os.write(master, b"\x1bOP")
+                wait_for(lambda: b"Command Palette" in received, "theme command palette")
+                os.write(master, b"Preferences: Color Theme\r")
+                received.clear()
+                wait_for(lambda: b"Gruvbox" in received, "theme picker lists presets")
+                paste(label)
+                os.write(master, b"\r")
+                wait_for(lambda: json.loads(config.read_text()).get("theme", {}).get("name") == theme,
+                         f"persist {theme} theme")
+            if json.loads(config.read_text())["shell"] != "/bin/sh":
+                raise AssertionError("theme selection overwrote shell configuration")
+
             # Use the top New button and save a new buffer through Save As.
             click(13, 1)
             paste("toolbar draft\n")
@@ -225,7 +240,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, toolbar, dock switching, tab drag, split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, inline Git log, read-only comparison, Open browser, Quick Open, Help, theme switching and persistence, toolbar, dock switching, tab drag, split, mouse, resize, exit")
         finally:
             if proc.poll() is None:
                 proc.kill()

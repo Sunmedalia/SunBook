@@ -15,11 +15,14 @@ type Server struct {
 	InitializationOptions map[string]any `json:"initializationOptions,omitempty"`
 }
 type Theme struct {
+	Name       string `json:"name,omitempty"`
 	Background string `json:"background"`
 	Foreground string `json:"foreground"`
 	Accent     string `json:"accent"`
+	Syntax     string `json:"syntax,omitempty"`
 }
 type Config struct {
+	FilePath      string            `json:"-"`
 	ActivityIcons string            `json:"activityIcons"`
 	TabSize       int               `json:"tabSize"`
 	InsertSpaces  bool              `json:"insertSpaces"`
@@ -35,7 +38,7 @@ func Default() Config {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	return Config{ActivityIcons: "nerd", TabSize: 4, InsertSpaces: true, Shell: sh, Theme: Theme{"#161e2b", "#d4deea", "#e2b66f"}, Keybindings: map[string]string{}, Servers: map[string]Server{
+	return Config{ActivityIcons: "nerd", TabSize: 4, InsertSpaces: true, Shell: sh, Theme: ThemePresets()[0].Theme, Keybindings: map[string]string{}, Servers: map[string]Server{
 		"go": {Command: "gopls"}, "python": {Command: "pyright-langserver", Args: []string{"--stdio"}}, "typescript": {Command: "typescript-language-server", Args: []string{"--stdio"}},
 	}}
 }
@@ -48,6 +51,7 @@ func Path() string {
 }
 func Load(path string) (Config, error) {
 	c := Default()
+	c.FilePath, _ = filepath.Abs(path)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return c, nil
@@ -62,9 +66,26 @@ func Load(path string) (Config, error) {
 	defaults := Default().Servers
 	var partial struct {
 		Servers map[string]json.RawMessage `json:"servers"`
+		Theme   json.RawMessage            `json:"theme"`
 	}
 	if err = json.Unmarshal(data, &partial); err != nil {
 		return c, err
+	}
+	if len(partial.Theme) > 0 {
+		var choice struct{ Name string }
+		if err = json.Unmarshal(partial.Theme, &choice); err != nil {
+			return c, fmt.Errorf("theme: %w", err)
+		}
+		if choice.Name != "" {
+			preset, ok := FindTheme(choice.Name)
+			if !ok {
+				return c, fmt.Errorf("unknown theme %q", choice.Name)
+			}
+			c.Theme = preset.Theme
+			if err = json.Unmarshal(partial.Theme, &c.Theme); err != nil {
+				return c, err
+			}
+		}
 	}
 	if c.Servers == nil {
 		c.Servers = map[string]Server{}

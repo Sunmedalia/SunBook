@@ -155,6 +155,7 @@ func (a *App) gitDiff(staged bool) {
 	a.gitViewSeq++
 	seq := a.gitViewSeq
 	base := a.base
+	syntax, themeSeq := a.cfg.Theme.Syntax, a.themeSeq
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 		defer cancel()
@@ -162,7 +163,7 @@ func (a *App) gitDiff(staged bool) {
 		var view *gitComparison
 		if err == nil {
 			view = newGitComparison(pair)
-			view.highlight(base)
+			view.highlight(base, syntax)
 		}
 		a.post(func() {
 			if seq != a.gitViewSeq || workspace != a.root {
@@ -176,6 +177,10 @@ func (a *App) gitDiff(staged bool) {
 				view.Top, view.Left, view.Pane, view.Ratio = c.Top, c.Left, c.Pane, c.Ratio
 			}
 			a.comparison = view
+			if themeSeq != a.themeSeq {
+				view.Highlights = [2][]tokenSpan{}
+				a.rehighlightComparison(view)
+			}
 			a.completion = nil
 			a.completionDue = zeroTime
 		})

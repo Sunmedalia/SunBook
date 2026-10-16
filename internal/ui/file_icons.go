@@ -148,6 +148,9 @@ func (a *App) drawFileIcon(x, y, width int, path string, folder, expanded bool, 
 		return 0
 	}
 	glyph, color := a.fileIcon(path, folder, expanded)
+	if lightBackground(a.base.GetBackground()) {
+		color = mix(color, a.base.GetForeground(), 45)
+	}
 	a.put(x, y, min(fileIconWidth-1, width), glyph, style.Foreground(color))
 	return min(fileIconWidth, text.Width(glyph, 4)+1, width)
 }

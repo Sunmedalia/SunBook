@@ -56,6 +56,7 @@ func (a *App) registerCommands() {
 		{"search.workspace", "Search: Find in Workspace", "ctrl+shift+f", a.workspaceSearch},
 		{"navigate.line", "Go to Line…", "ctrl+g", a.goLine},
 		{"view.sidebar", "View: Toggle Sidebar", "ctrl+b", a.toggleSidebar},
+		{"view.theme", "Preferences: Color Theme…", "ctrl+k ctrl+t", a.chooseTheme},
 		{"view.explorer", "View: Explorer", "ctrl+shift+e", func() { a.showSidebar("Explorer") }},
 		{"activity.explorer", "Activity: Toggle Explorer", "", func() { a.toggleSidebarView("Explorer") }},
 		{"activity.search", "Activity: Toggle Search", "", func() { a.toggleSidebarView("Search") }},

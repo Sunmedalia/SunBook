@@ -114,7 +114,7 @@ func TestComparisonSyntaxPreservesTabsUnicodeAndHorizontalScrolling(t *testing.T
 	line := "\tvar message = \"中👩‍💻é\" // note"
 	a.comparison = newGitComparison(gitservice.Comparison{Path: "main.go", Old: line, New: line})
 	c := a.comparison
-	c.highlight(a.base)
+	c.highlight(a.base, a.cfg.Theme.Syntax)
 	c.Left = [2]int{2, 2} // Start in the middle of the leading tab.
 	a.draw()
 	for pane := range 2 {
@@ -145,7 +145,7 @@ func TestComparisonSyntaxFallbacks(t *testing.T) {
 	} {
 		t.Run(pair.Path, func(t *testing.T) {
 			c := newGitComparison(pair)
-			c.highlight(a.base)
+			c.highlight(a.base, a.cfg.Theme.Syntax)
 			a.comparison = c
 			a.draw()
 			if pair.Binary && (len(c.Highlights[0]) != 0 || len(c.Highlights[1]) != 0) {

@@ -25,6 +25,8 @@ func (a *App) actionIcon(id, label string) string {
 		nerd, plain = "\uf141", "…"
 	case "app.help":
 		nerd, plain = "\uf059", "?"
+	case "view.theme":
+		nerd, plain = "\uf1fc", "◐"
 	case "view.problems", "search.error":
 		nerd, plain = "\uf071", "!"
 	case "view.hidePanel", "explorer.clearFilter", "search.clear":

@@ -42,6 +42,7 @@ type item struct {
 	Path          string
 	Dir           bool
 	Action        func()
+	Swatch        [3]string
 }
 type modal struct {
 	Open                         *openPicker
@@ -197,6 +198,7 @@ type App struct {
 	clickX, clickY, clickCount            int
 	mouseClicks                           uint64
 	fileClick                             fileClick
+	themeSeq                              int
 	base, muted, accent, chrome, selected tcell.Style
 	colors                                palette
 }

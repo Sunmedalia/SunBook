@@ -111,15 +111,19 @@ func (a *App) runHighlight(d *editor.Document) {
 	s := d.Buffer.String()
 	path := d.Path
 	bg := a.base
+	syntax, themeSeq := a.cfg.Theme.Syntax, a.themeSeq
 	if len(s) > 2*1024*1024 {
 		delete(a.highlight, d)
 		delete(a.highlightRunning, d)
 		return
 	}
 	go func() {
-		spans := syntaxSpans(path, s, bg)
+		spans := syntaxSpans(path, s, bg, syntax)
 		a.post(func() {
 			delete(a.highlightRunning, d)
+			if themeSeq != a.themeSeq {
+				return
+			}
 			for _, open := range a.docs {
 				if open == d && d.Buffer.Version == version {
 					a.highlight[d] = highlights{version, spans}

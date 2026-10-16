@@ -9,7 +9,7 @@ import (
 
 // Tokenize a complete snapshot so multiline comments and strings retain their
 // context. Editor and comparison workers share the same language and palette.
-func syntaxSpans(path, source string, base tcell.Style) []tokenSpan {
+func syntaxSpans(path, source string, base tcell.Style, syntax string) []tokenSpan {
 	if len(source) == 0 || len(source) > 2*1024*1024 {
 		return nil
 	}
@@ -21,7 +21,10 @@ func syntaxSpans(path, source string, base tcell.Style) []tokenSpan {
 	if err != nil {
 		return nil
 	}
-	theme := styles.Get("github-dark")
+	if syntax == "" {
+		syntax = "github-dark"
+	}
+	theme := styles.Get(syntax)
 	if theme == nil {
 		theme = styles.Fallback
 	}

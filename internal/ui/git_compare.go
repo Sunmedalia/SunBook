@@ -160,10 +160,10 @@ func newGitComparison(pair gitservice.Comparison) *gitComparison {
 	}
 	return c
 }
-func (c *gitComparison) highlight(base tcell.Style) {
+func (c *gitComparison) highlight(base tcell.Style, syntax string) {
 	if !c.Pair.Binary {
-		c.Highlights[0] = syntaxSpans(c.Pair.Path, c.Pair.Old, base)
-		c.Highlights[1] = syntaxSpans(c.Pair.Path, c.Pair.New, base)
+		c.Highlights[0] = syntaxSpans(c.Pair.Path, c.Pair.Old, base, syntax)
+		c.Highlights[1] = syntaxSpans(c.Pair.Path, c.Pair.New, base, syntax)
 	}
 }
 func (a *App) comparing() bool { return a.comparison != nil && a.comparison.Active }

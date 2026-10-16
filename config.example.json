@@ -3,9 +3,7 @@
   "activityIcons": "nerd",
   "insertSpaces": true,
   "theme": {
-    "background": "#161e2b",
-    "foreground": "#d4deea",
-    "accent": "#e2b66f"
+    "name": "sunbook"
   },
   "keybindings": {
     "ctrl+s": "file.save",

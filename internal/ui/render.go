@@ -703,6 +703,13 @@ func (a *App) drawModal() {
 				a.put(x+width-detailWidth-2, contentY+i, detailWidth, fitLabel(it.Detail, detailWidth), style.Foreground(a.colors.muted))
 			}
 			labelX := x + 2
+			if it.Swatch[0] != "" && labelWidth >= 14 {
+				for _, color := range it.Swatch {
+					a.put(labelX, contentY+i, 2, "██", style.Foreground(tcell.GetColor(color)))
+					labelX += 3
+					labelWidth -= 3
+				}
+			}
 			if m.Open != nil {
 				n := a.drawFileIcon(labelX, contentY+i, labelWidth, it.Path, it.Dir, false, style)
 				labelX += n

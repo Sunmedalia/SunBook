@@ -1,6 +1,11 @@
 package ui
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"sunbook/internal/config"
+	"sunbook/internal/editor"
+
+	"github.com/gdamore/tcell/v3"
+)
 
 // Surfaces follow the configured background/foreground so custom themes retain
 // the same hierarchy as the default SunBook night workbench.
@@ -28,6 +33,20 @@ func (a *App) initTheme() {
 		folder: tcell.GetColor("#8ABEB7"), success: tcell.GetColor("#9BC99A"), danger: tcell.GetColor("#E79A95"),
 		shadow: mix(bg, tcell.ColorBlack, 40), onAccent: tcell.GetColor("#161E2B"),
 	}
+	switch a.cfg.Theme.Name {
+	case "tokyo-night":
+		a.colors.folder, a.colors.success, a.colors.danger = tcell.GetColor("#7dcfff"), tcell.GetColor("#9ece6a"), tcell.GetColor("#f7768e")
+	case "dracula":
+		a.colors.folder, a.colors.success, a.colors.danger = tcell.GetColor("#8be9fd"), tcell.GetColor("#50fa7b"), tcell.GetColor("#ff5555")
+	case "nord":
+		a.colors.folder, a.colors.success, a.colors.danger = tcell.GetColor("#81a1c1"), tcell.GetColor("#a3be8c"), tcell.GetColor("#bf616a")
+	case "gruvbox-dark":
+		a.colors.folder, a.colors.success, a.colors.danger = tcell.GetColor("#83a598"), tcell.GetColor("#b8bb26"), tcell.GetColor("#fb4934")
+	}
+	if lightBackground(bg) {
+		a.colors.inset = mix(bg, fg, 4)
+		a.colors.folder, a.colors.success, a.colors.danger = tcell.GetColor("#0969da"), tcell.GetColor("#1a7f37"), tcell.GetColor("#cf222e")
+	}
 	r, g, b := accent.RGB()
 	if r*299+g*587+b*114 < 145000 {
 		a.colors.onAccent = tcell.GetColor("#F5F7FA")
@@ -36,6 +55,65 @@ func (a *App) initTheme() {
 	a.accent = a.base.Foreground(accent)
 	a.chrome = a.base.Background(mix(bg, fg, 5))
 	a.selected = a.base.Background(a.colors.selection)
+}
+
+func lightBackground(color tcell.Color) bool {
+	r, g, b := color.RGB()
+	return r*299+g*587+b*114 >= 145000
+}
+
+func (a *App) chooseTheme() {
+	var choices []item
+	selected := 0
+	for _, preset := range config.ThemePresets() {
+		label := preset.Label
+		if a.cfg.Theme == preset.Theme {
+			label += " · current"
+			selected = len(choices)
+		}
+		choices = append(choices, item{Label: label, Detail: preset.Description,
+			Swatch: [3]string{preset.Theme.Background, preset.Theme.Foreground, preset.Theme.Accent}, Action: func() {
+				a.applyTheme(preset.Theme)
+				if a.cfg.FilePath != "" {
+					if err := config.SaveTheme(a.cfg.FilePath, preset.Theme.Name); err != nil {
+						a.notify("Theme applied for this session; could not save: " + err.Error())
+						return
+					}
+				}
+				a.notify("Theme: " + preset.Label)
+			}})
+	}
+	a.setModal(&modal{Title: "Color Theme", InputEnabled: true, Filter: true, Items: choices, Selected: selected,
+		Placeholder: "Filter themes…", Hint: "↑/↓ choose · Enter applies and remembers · Esc cancels"})
+}
+
+func (a *App) applyTheme(theme config.Theme) {
+	a.cfg.Theme = theme
+	a.themeSeq++
+	a.initTheme()
+	a.screen.SetStyle(a.base)
+	a.highlight = map[*editor.Document]highlights{}
+	a.highlightPending = map[*editor.Document]int{}
+	for _, d := range a.docs {
+		a.scheduleHighlight(d)
+	}
+	if c := a.comparison; c != nil {
+		c.Highlights = [2][]tokenSpan{}
+		a.rehighlightComparison(c)
+	}
+}
+
+func (a *App) rehighlightComparison(c *gitComparison) {
+	pair, base, syntax, seq := c.Pair, a.base, a.cfg.Theme.Syntax, a.themeSeq
+	go func() {
+		view := &gitComparison{Pair: pair}
+		view.highlight(base, syntax)
+		a.post(func() {
+			if a.comparison == c && a.themeSeq == seq {
+				c.Highlights = view.Highlights
+			}
+		})
+	}()
 }
 
 func (a *App) inputStyle(focused bool) tcell.Style {
