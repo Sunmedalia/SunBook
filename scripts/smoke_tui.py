@@ -54,7 +54,10 @@ def main():
                             raise
                 if proc.poll() is not None:
                     raise AssertionError(f"editor exited {proc.returncode} while waiting for {description}: {received[-3000:]!r}")
-            raise AssertionError(f"timed out: {description}\n{received[-3000:]!r}")
+            status = subprocess.run(["git", "-C", workspace, "status", "--porcelain=v1"],
+                                    capture_output=True, text=True)
+            raise AssertionError(f"timed out: {description}\ngit status: {status.stdout!r}\n"
+                                 f"initial output: {received[:5000]!r}\nlast output: {received[-2000:]!r}")
 
         def paste(text):
             os.write(master, b"\x1b[200~" + text.encode() + b"\x1b[201~")
