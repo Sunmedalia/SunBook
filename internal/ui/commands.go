@@ -31,6 +31,9 @@ func (a *App) registerCommands() {
 		{"app.quit", "Quit SunBook", "ctrl+q", a.confirmExit},
 		{"app.commands", "Show Command Palette", "ctrl+shift+p", a.palette},
 		{"app.help", "Help: Keyboard Shortcuts", "", a.help},
+		{"app.settings", "Preferences: Settings…", "", a.settings},
+		{"view.fileIcons", "Preferences: File Icon Theme…", "", a.chooseFileIcons},
+		{"view.actionIcons", "Preferences: Button & Sidebar Icons…", "", a.chooseActionIcons},
 		{"app.doctor", "Help: Dependency Check", "", func() { a.showText("Dependencies", config.Doctor(a.cfg)) }},
 		{"edit.undo", "Edit: Undo", "ctrl+z", func() {
 			if a.view().Undo(false) {
@@ -271,6 +274,7 @@ Up / Down / Enter        Choose / accept a dialog item
 Esc                      Close a dialog
 
 All actions are available under More / the command palette.
+Settings gear            File icons, button/sidebar icons and color theme
 `)
 	a.showText("Keyboard Shortcuts", body.String())
 	a.modal.Hint = "↑/↓ or wheel scrolls · PgUp/PgDn pages · ←/→ pans · Esc closes"

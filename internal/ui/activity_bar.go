@@ -50,4 +50,20 @@ func (a *App) drawActivityBar() {
 		}
 		a.buttons = append(a.buttons, button{rect: tile, Command: entry.id, Hint: entry.hint})
 	}
+	tile := rect{r.X, r.Y + r.H - 3, r.W, 3}
+	if tile.Y >= r.Y+len(entries)*3 {
+		style := a.base.Background(a.colors.inset).Foreground(a.colors.muted)
+		if a.hoverCommand == "app.settings" {
+			style = style.Background(a.colors.hover).Foreground(a.accent.GetForeground())
+		}
+		if a.modal != nil && (a.modal.Title == "Settings" || a.modal.Title == "File Icon Theme" || a.modal.Title == "Button & Sidebar Icons") {
+			style = style.Background(a.colors.selection).Foreground(a.accent.GetForeground())
+		}
+		face := rect{tile.X + 1, tile.Y + 1, tile.W - 2, 1}
+		a.fill(face, style)
+		icon := a.actionIcon("app.settings", "Settings")
+		width := text.Width(icon, 4)
+		a.put(face.X+max(0, (face.W-width)/2), face.Y, width, icon, style)
+		a.buttons = append(a.buttons, button{rect: tile, Command: "app.settings", Hint: "Settings: file icons, button icons, color theme"})
+	}
 }

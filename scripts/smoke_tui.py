@@ -23,6 +23,8 @@ def main():
         nested = Path(workspace) / "nested" / "needle.txt"
         nested.parent.mkdir()
         nested.write_text("nested sample", encoding="utf-8")
+        (Path(workspace) / "language.py").write_text("pass\n", encoding="utf-8")
+        (Path(workspace) / "library.rs").write_text("fn main() {}\n", encoding="utf-8")
         config = Path(workspace) / "smoke-config.json"
         config.write_text(json.dumps({"shell": "/bin/sh"}), encoding="utf-8")
         history = Path(workspace) / "history.go"
@@ -84,6 +86,8 @@ def main():
 
         try:
             wait_for(lambda: b"SUNBOOK" in received, "first screen")
+            wait_for(lambda: "🐍".encode() in received and "🦀".encode() in received,
+                     "Python and Rust use mascot icons in Explorer")
             # Bracketed paste is one edit and must preserve all UTF-8 graphemes.
             prefix = "你好 👩‍💻\n"
             os.write(master, b"\x1b[200~" + prefix.encode() + b"\x1b[201~\x13")
@@ -254,6 +258,22 @@ def main():
             if json.loads(config.read_text())["shell"] != "/bin/sh":
                 raise AssertionError("theme selection overwrote shell configuration")
 
+            # Settings keeps the original icon set and persists each selection.
+            for icon_theme, arrow in [("classic", b"\x1b[B"), ("expressive", b"\x1b[A")]:
+                received.clear()
+                click(3, 29)  # Bottom-left Settings gear at 110x32.
+                wait_for(lambda: b"File Icons" in received, "Settings opens from activity gear")
+                received.clear()
+                os.write(master, b"\r")
+                wait_for(lambda: b"File Icon Theme" in received,
+                         "file icon picker retains original icons")
+                os.write(master, arrow + b"\r")
+                wait_for(lambda: json.loads(config.read_text()).get("fileIcons") == icon_theme,
+                         f"Settings persists {icon_theme} icons")
+            saved_icons = json.loads(config.read_text())
+            if saved_icons.get("activityIcons") != "nerd" or saved_icons.get("theme", {}).get("name") != "sunbook":
+                raise AssertionError("file icons overwrote theme or button icons")
+
             # New uses one optional filename input; blank creates an untitled draft.
             click(13, 1)
             paste("created-from-new.txt")
@@ -316,7 +336,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, Settings/Classic/Expressive icon persistence, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
         finally:
             # Closing the PTY master first also releases a macOS child that is
             # exiting while its tty output is blocked after a failed assertion.

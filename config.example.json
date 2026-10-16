@@ -1,6 +1,7 @@
 {
   "tabSize": 4,
   "activityIcons": "nerd",
+  "fileIcons": "expressive",
   "insertSpaces": true,
   "theme": {
     "name": "sunbook"

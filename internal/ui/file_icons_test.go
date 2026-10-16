@@ -17,14 +17,14 @@ func TestFileIconsKeepExplorerExpansionAndTabCloseWorking(t *testing.T) {
 	r := a.sideRect
 	y := r.Y + 3
 	s, _, _ := a.screen.Get(r.X+3, y)
-	if s != "▰" {
+	if mark, _ := a.fileIcon(dir, true, false); s != mark {
 		t.Fatal("folder icon absent", s)
 	}
 	click(a, r.X+7, y)
 	waitUpdates(t, a, func() bool { return len(a.treeAll) == 2 })
 	a.draw()
 	s, _, _ = a.screen.Get(r.X+3, y)
-	if s != "▱" {
+	if mark, _ := a.fileIcon(dir, true, true); s != mark {
 		t.Fatal("expanded folder icon absent", s)
 	}
 	click(a, r.X+9, y+1)
@@ -34,7 +34,7 @@ func TestFileIconsKeepExplorerExpansionAndTabCloseWorking(t *testing.T) {
 	a.draw()
 	tab := a.tabs[len(a.tabs)-1]
 	s, _, _ = a.screen.Get(tab.X+2, tab.Y)
-	if s != "G" {
+	if mark, _ := a.fileIcon(file, false, false); s != mark {
 		t.Fatal("file tab icon absent", s)
 	}
 	click(a, tab.X+tab.W-2, tab.Y)

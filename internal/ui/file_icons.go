@@ -88,7 +88,7 @@ var fileLanguageIcons = func() map[string]fileIconSpec {
 	return icons
 }()
 
-func (a *App) fileIcon(path string, folder, expanded bool) (string, tcell.Color) {
+func (a *App) classicFileIcon(path string, folder, expanded bool) (string, tcell.Color) {
 	if folder {
 		if expanded {
 			return "▱", a.colors.folder

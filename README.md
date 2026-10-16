@@ -79,6 +79,8 @@ sunbook --config config.json .
 
 使用支持 UTF-8、真彩色和鼠标事件的终端。默认按钮图标使用 Nerd Font，请在终端选择例如 **Maple Mono NF** 的字体；普通字体可在配置中设置 `"activityIcons": "unicode"`。
 
+左下角 **⚙ Settings** 可配置文件图标、按钮/侧栏图标和主题，选择后即时生效并保存。文件图标默认使用 **Expressive**：🐍 Python、🦀 Rust、🐹 Go、☕ Java、💎 Ruby、🐘 PHP、🐳 Docker；文件夹、文档、媒体和锁文件也有对应图标。**Classic** 完整保留原来的 `Py / Rs / Go` 文字图标，随时可切回。文件图标不依赖 Nerd Font，Emoji 的显示样式由宿主终端决定。
+
 - **找文件**：点击 Explorer，或按 `Ctrl+P` 搜索路径。单击文件使用斜体预览标签，双击文件或标签将其固定；编辑、保存、拖动时也会自动固定。
 - **新建与保存**：点击 **New** 或按 `Ctrl+N`，直接显示一个文件名输入框：留空按 Enter 创建未命名草稿，输入名称或路径后按 Enter 创建命名文件。新文件使用 Explorer 选中的文件夹，选中文件则使用它的父目录；点击工作区名称可回到根目录。未命名草稿会记住创建目录，保存时只显示一个紧凑的路径输入框，按 Esc 保留草稿；已有文件直接保存。
 - **删除文件**：选中文件后点击 Explorer 顶部的垃圾桶，或在 Explorer 聚焦时按 `Delete`；确认后从磁盘删除。已打开的干净标签自动关闭，未保存的修改会保留，按 Save 可以恢复文件。`F1 → File: Delete Current File…` 可删除当前编辑文件。
@@ -141,6 +143,7 @@ Git 操作针对磁盘上已保存的文件；应用内暂不提供 push、分�
 {
   "theme": { "name": "nord" },
   "activityIcons": "nerd",
+  "fileIcons": "expressive",
   "tabSize": 4,
   "insertSpaces": true,
   "keybindings": { "f8": "language.format" }
@@ -148,6 +151,8 @@ Git 操作针对磁盘上已保存的文件；应用内暂不提供 push、分�
 ```
 
 主题名称为 `sunbook`、`tokyo-night`、`dracula`、`nord`、`gruvbox-dark`、`github-light`；可覆盖 `background`、`foreground`、`accent`、`syntax`。在界面选择主题会替换主题覆盖项，保留其他配置。快捷键设为空字符串可禁用；组合顺序为 `ctrl+alt+shift+key`，多段快捷键用空格分隔。
+
+`fileIcons` 支持 `expressive`（语言/类型图标）和 `classic`（原有文字图标）；`activityIcons` 支持 `nerd` 和 `unicode`，控制按钮及侧栏。这两项可在 Settings 单独切换，保存到当前配置文件，包括自定义 `--config` 路径。窄窗口也可以通过 `F1 → Preferences: Settings…` 进入设置。
 
 | 可选工具 | 用途 |
 | --- | --- |

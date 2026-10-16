@@ -5,7 +5,7 @@ package ui
 func (a *App) actionIcon(id, label string) string {
 	nerd, plain := "", ""
 	switch id {
-	case "file.new":
+	case "file.new", "file.newUntitled":
 		nerd, plain = "\uf016", "+"
 	case "file.open", "file.quickOpen", "git.open":
 		nerd, plain = "\uf07c", "/"
@@ -25,6 +25,10 @@ func (a *App) actionIcon(id, label string) string {
 		nerd, plain = "\uf141", "…"
 	case "app.help":
 		nerd, plain = "\uf059", "?"
+	case "app.settings", "view.fileIcons", "view.actionIcons":
+		nerd, plain = "\uf013", "⚙"
+	case "file.rename", "language.rename":
+		nerd, plain = "\uf040", "✎"
 	case "view.theme":
 		nerd, plain = "\uf1fc", "◐"
 	case "view.problems", "search.error":
@@ -42,7 +46,7 @@ func (a *App) actionIcon(id, label string) string {
 		if label == "Bottom" {
 			nerd, plain = "\uf063", "↓"
 		}
-	case "git.refresh", "explorer.refresh":
+	case "git.refresh", "explorer.refresh", "file.reload":
 		nerd, plain = "\uf021", "R"
 	case "git.commit":
 		nerd, plain = "\uf00c", "✓"

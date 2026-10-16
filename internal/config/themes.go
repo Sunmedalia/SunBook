@@ -1,11 +1,6 @@
 package config
 
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-)
+import "fmt"
 
 type ThemePreset struct {
 	Label, Description string
@@ -40,52 +35,5 @@ func SaveTheme(path, name string) error {
 	if _, ok := FindTheme(name); !ok {
 		return fmt.Errorf("unknown theme %q", name)
 	}
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
-	}
-	settings := map[string]json.RawMessage{}
-	mode := os.FileMode(0600)
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if err = json.Unmarshal(data, &settings); err != nil {
-			return fmt.Errorf("read config: %w", err)
-		}
-		if info, err := os.Stat(path); err == nil {
-			mode = info.Mode().Perm()
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	if settings == nil {
-		settings = map[string]json.RawMessage{}
-	}
-	settings["theme"], _ = json.Marshal(struct {
-		Name string `json:"name"`
-	}{name})
-	data, err = json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".sunbook-config-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	if err = f.Chmod(mode); err != nil {
-		return err
-	}
-	if _, err = f.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
+	return saveSettings(path, map[string]any{"theme": map[string]string{"name": name}})
 }

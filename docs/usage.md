@@ -25,6 +25,8 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   Nerd Font glyphs; choose a Nerd Font in your terminal (such as Maple Mono NF),
   or set `"activityIcons": "unicode"` for ordinary character icons. This setting
   applies to toolbar and panel action icons too.
+  The bottom-left **Settings** gear opens file icons, button/sidebar icons, and
+  color theme preferences. In narrow windows use **Preferences: Settings…** in F1.
   Each opens a persistent left sidebar; clicking the active activity hides it.
   Ctrl+B hides/restores the sidebar while the activity bar stays visible.
   Drag file tabs to reorder them, or drop a tab on an editor's left/right edge
@@ -80,11 +82,15 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 - File type icons appear in Explorer, Open / Quick Open, editor tabs, Search,
   and Git file lists. Folders show separate open/closed marks; source files,
   documents, settings, images, and archives have distinct colors and symbols.
-  Language marks follow filename extensions: `Go`, `Py`, `JS`, `JSX`, `TS`,
-  `TSX`, `C`, `C++`, `C#`, `Jav`, `Kt`, `Sw`, `Rb`, `PHP`, `Lua`, and more.
-  Vue / Svelte, HTML / XML, CSS / Sass / Less, and JSON / YAML / TOML also
-  have separate marks. Matching is case-insensitive; TypeScript declarations
-  use `dTS`. Icons use standard characters, without a patched font.
+  **Expressive** is the default: Python 🐍, Rust 🦀, Go 🐹, Java ☕, Ruby 💎,
+  PHP 🐘, Docker 🐳, and distinct symbols for other source and file types.
+  JSX, TSX and TypeScript declarations keep distinct marks. Project files such
+  as Cargo.toml, pyproject.toml, package.json, lockfiles and README also have
+  specific icons. Matching is case-insensitive. **Classic** keeps the original
+  text marks (`Go`, `Py`, `Rs`, `JS`, `C++`, etc.) and original folder icons.
+  Choose either under **Settings → File Icons…**; switching applies across
+  every file surface and persists to the active configuration. Emoji appearance
+  depends on the terminal; Classic needs no emoji or patched-font support.
 - Single-click a file in Explorer or a Search result to preview it in an italic
   tab. Selecting another file reuses that preview tab. Double-click the file or
   its tab to keep it open; editing, saving, or dragging the tab also keeps it.
@@ -321,6 +327,13 @@ applications remain intact. You can
 override a preset's `background`, `foreground`, `accent`, or `syntax` fields;
 existing configs with just custom colors continue to work. Picking a theme in
 the UI replaces those theme overrides and preserves other config settings.
+
+`fileIcons` accepts `expressive` (default mascots/type icons) or `classic`
+(original text icons). `activityIcons` accepts `nerd` (default) or `unicode`
+for toolbar/panel and activity icons. The Settings gear configures them separately;
+selection applies immediately and is saved without changing other configuration
+fields. **Preferences: File Icon Theme…** and **Preferences: Button & Sidebar Icons…**
+also open the corresponding choices directly from F1.
 
 Optional fields:
 

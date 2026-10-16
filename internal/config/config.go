@@ -24,6 +24,7 @@ type Theme struct {
 type Config struct {
 	FilePath      string            `json:"-"`
 	ActivityIcons string            `json:"activityIcons"`
+	FileIcons     string            `json:"fileIcons"`
 	TabSize       int               `json:"tabSize"`
 	InsertSpaces  bool              `json:"insertSpaces"`
 	Shell         string            `json:"shell"`
@@ -38,7 +39,7 @@ func Default() Config {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	return Config{ActivityIcons: "nerd", TabSize: 4, InsertSpaces: true, Shell: sh, Theme: ThemePresets()[0].Theme, Keybindings: map[string]string{}, Servers: map[string]Server{
+	return Config{ActivityIcons: "nerd", FileIcons: "expressive", TabSize: 4, InsertSpaces: true, Shell: sh, Theme: ThemePresets()[0].Theme, Keybindings: map[string]string{}, Servers: map[string]Server{
 		"go": {Command: "gopls"}, "python": {Command: "pyright-langserver", Args: []string{"--stdio"}}, "typescript": {Command: "typescript-language-server", Args: []string{"--stdio"}},
 	}}
 }
@@ -99,6 +100,9 @@ func Load(path string) (Config, error) {
 	}
 	if c.ActivityIcons != "nerd" && c.ActivityIcons != "unicode" {
 		return c, fmt.Errorf("activityIcons must be nerd or unicode")
+	}
+	if c.FileIcons != "classic" && c.FileIcons != "expressive" {
+		return c, fmt.Errorf("fileIcons must be classic or expressive")
 	}
 	if c.TabSize < 1 || c.TabSize > 16 {
 		return c, fmt.Errorf("tabSize must be between 1 and 16")

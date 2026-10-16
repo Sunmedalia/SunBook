@@ -246,9 +246,9 @@ func TestOpenNavigationButtonsAndEditablePath(t *testing.T) {
 	// The file type mark has its own cells/color and leaves the selectable name intact.
 	x := a.modalRect.X + 2
 	mark, st, _ := a.screen.Get(x, m.ListY)
-	next, _, _ := a.screen.Get(x+1, m.ListY)
-	if mark+next != "Go" || st.GetBackground() != a.selected.GetBackground() || m.Visible[0].Label != "main.go" {
-		t.Fatal("typed file icon not rendered", mark, next, m.Visible)
+	want, _ := a.fileIcon(file, false, false)
+	if mark != want || st.GetBackground() != a.selected.GetBackground() || m.Visible[0].Label != "main.go" {
+		t.Fatal("typed file icon not rendered", mark, want, m.Visible)
 	}
 	click(a, s.UpRect.X+1, s.UpRect.Y)
 	waitPicker(t, a)
