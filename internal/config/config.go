@@ -20,13 +20,14 @@ type Theme struct {
 	Accent     string `json:"accent"`
 }
 type Config struct {
-	TabSize      int               `json:"tabSize"`
-	InsertSpaces bool              `json:"insertSpaces"`
-	Shell        string            `json:"shell"`
-	PythonPath   string            `json:"pythonPath"`
-	Theme        Theme             `json:"theme"`
-	Keybindings  map[string]string `json:"keybindings"`
-	Servers      map[string]Server `json:"servers"`
+	ActivityIcons string            `json:"activityIcons"`
+	TabSize       int               `json:"tabSize"`
+	InsertSpaces  bool              `json:"insertSpaces"`
+	Shell         string            `json:"shell"`
+	PythonPath    string            `json:"pythonPath"`
+	Theme         Theme             `json:"theme"`
+	Keybindings   map[string]string `json:"keybindings"`
+	Servers       map[string]Server `json:"servers"`
 }
 
 func Default() Config {
@@ -34,7 +35,7 @@ func Default() Config {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	return Config{TabSize: 4, InsertSpaces: true, Shell: sh, Theme: Theme{"#161e2b", "#d4deea", "#e2b66f"}, Keybindings: map[string]string{}, Servers: map[string]Server{
+	return Config{ActivityIcons: "nerd", TabSize: 4, InsertSpaces: true, Shell: sh, Theme: Theme{"#161e2b", "#d4deea", "#e2b66f"}, Keybindings: map[string]string{}, Servers: map[string]Server{
 		"go": {Command: "gopls"}, "python": {Command: "pyright-langserver", Args: []string{"--stdio"}}, "typescript": {Command: "typescript-language-server", Args: []string{"--stdio"}},
 	}}
 }
@@ -74,6 +75,9 @@ func Load(path string) (Config, error) {
 			return c, err
 		}
 		c.Servers[key] = server
+	}
+	if c.ActivityIcons != "nerd" && c.ActivityIcons != "unicode" {
+		return c, fmt.Errorf("activityIcons must be nerd or unicode")
 	}
 	if c.TabSize < 1 || c.TabSize > 16 {
 		return c, fmt.Errorf("tabSize must be between 1 and 16")

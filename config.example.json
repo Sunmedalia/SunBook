@@ -1,5 +1,6 @@
 {
   "tabSize": 4,
+  "activityIcons": "nerd",
   "insertSpaces": true,
   "theme": {
     "background": "#161e2b",

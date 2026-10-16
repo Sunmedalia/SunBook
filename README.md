@@ -17,9 +17,11 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 
 ## Editor
 
-- VS Code style activity bar with file, magnifier, and branch line icons for
-  Explorer, Search, and Source Control. Icons highlight on hover and selection;
-  hover also shows the panel name and shortcut.
+- VS Code style activity bar with compact folder, magnifier, and branch icons
+  for Explorer, Search, and Source Control. Icons highlight on hover and
+  selection; hover shows the panel name and shortcut. The default icons use
+  Nerd Font glyphs; choose a Nerd Font in your terminal (such as Maple Mono NF),
+  or set `"activityIcons": "unicode"` for ordinary character icons.
   Each opens a persistent left sidebar; clicking the active activity hides it.
   Ctrl+B hides/restores the sidebar while the activity bar stays visible.
   Drag file tabs to reorder them, or drop a tab on an editor's left/right edge
