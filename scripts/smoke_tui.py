@@ -128,9 +128,13 @@ def main():
             wait_for(lambda: b"CONTROL" in received and (b"CHANGES" in received or b"UNTRACKED" in received), "Git sidebar")
             # Terminal diff rendering may skip unchanged spaces between words.
             wait_for(lambda: b"GIT LOG" in received and b"SMOKE" in received, "inline Git log")
-            # Refresh preserves selection; explicitly choose the first file so
-            # an earlier status snapshot cannot change which fixture is staged.
-            os.write(master, b"\x1b[Hs")  # Home, then stage nested/needle.txt
+            # Select by path instead of relying on row order or a selection
+            # preserved by an asynchronous Git refresh.
+            received.clear()
+            os.write(master, b"\x06")  # Ctrl+F: Git path filter
+            paste("nested/needle.txt")
+            wait_for(lambda: b"nested/needle.txt" in received, "Git filter selects one fixture")
+            os.write(master, b"\rs")  # focus the filtered list and stage its only file
             wait_for(lambda: subprocess.run(["git", "-C", workspace, "ls-files", "--error-unmatch", "--", "nested/needle.txt"],
                                             capture_output=True).returncode == 0, "Git sidebar stages file")
             staged = subprocess.check_output(["git", "-C", workspace, "show", ":nested/needle.txt"])
