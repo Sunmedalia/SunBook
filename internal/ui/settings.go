@@ -3,6 +3,12 @@ package ui
 import "sunbook/internal/config"
 
 func (a *App) settings() {
+	theme := a.cfg.Theme.Name
+	if preset, ok := config.FindTheme(theme); ok {
+		theme = preset.Label
+	} else if theme == "" {
+		theme = "Custom"
+	}
 	files := "Expressive · 🐍 🦀"
 	if a.cfg.FileIcons == "classic" {
 		files = "Classic · Py Rs Go"
@@ -13,9 +19,10 @@ func (a *App) settings() {
 	}
 	a.setModal(&modal{Title: "Settings", Compact: true, Hint: "↑/↓ choose · Enter opens · Esc closes",
 		Items: []item{
+			{Label: "Theme…", Detail: theme, Action: a.chooseTheme},
 			{Label: "File Icons…", Detail: files, Action: a.chooseFileIcons},
 			{Label: "Button & Sidebar Icons…", Detail: buttons, Action: a.chooseActionIcons},
-			{Label: "Color Theme…", Detail: a.cfg.Theme.Name, Action: a.chooseTheme},
+			{Label: "Plugins…", Detail: "Install, enable and inspect health", Action: func() { a.showSidebar("Plugins"); a.refreshPlugins() }},
 		}})
 }
 

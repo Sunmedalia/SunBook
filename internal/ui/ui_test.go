@@ -15,7 +15,7 @@ import (
 	"sunbook/internal/text"
 )
 
-func testApp(t *testing.T) (*App, vt.MockTerm) {
+func testApp(t testing.TB) (*App, vt.MockTerm) {
 	t.Helper()
 	mt := vt.NewMockTerm(vt.MockOptSize{X: 110, Y: 32})
 	screen, e := tcell.NewTerminfoScreenFromTty(mt)

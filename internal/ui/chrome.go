@@ -135,5 +135,19 @@ func (a *App) drawStatus(width, y int) {
 	left := "git: " + branch + "   " + focus
 	a.put(1, y, max(0, rightX-3), fitLabel(left, rightX-3), style.Foreground(a.colors.muted))
 	a.put(rightX, y, width-rightX-1, right, style)
+	if a.git.Root != "" && rightX > 8 {
+		branchWidth := min(text.Width("git: "+branch, 4), rightX-3)
+		a.buttons = append(a.buttons, button{rect: rect{1, y, branchWidth, 1}, Command: "git.branches", Hint: "Manage Git branches", Disabled: a.gitBusy})
+	}
+	badge, failed := a.pluginStatusLabel()
+	badgeX := 1 + text.Width(left, 4) + 2
+	if badgeX+text.Width(badge, 4) < rightX-1 {
+		badgeStyle := style.Foreground(a.colors.muted)
+		if failed {
+			badgeStyle = badgeStyle.Foreground(a.colors.danger)
+		}
+		a.put(badgeX, y, text.Width(badge, 4), badge, badgeStyle)
+		a.buttons = append(a.buttons, button{rect: rect{badgeX, y, text.Width(badge, 4), 1}, Command: "plugins.manage", Hint: "Plugin health; click to manage"})
+	}
 	a.put(0, y, 1, "▎", style.Foreground(a.accent.GetForeground()))
 }

@@ -19,7 +19,7 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
 
 ## Editor
 
-- VS Code style activity bar with compact folder, magnifier, and branch icons
+- VS Code style activity bar with compact folder, magnifier, branch, and plugin icons
   for Explorer, Search, and Source Control. Icons highlight on hover and
   selection; hover shows the panel name and shortcut. The default icons use
   Nerd Font glyphs; choose a Nerd Font in your terminal (such as Maple Mono NF),
@@ -66,8 +66,9 @@ editing. Use a UTF-8 terminal with mouse reporting and truecolor support.
   surrounding surfaces and selection colors.
 - Six color themes: SunBook, Tokyo Night, Dracula, Nord, Gruvbox Dark, and
   GitHub Light, plus **Auto** and **Terminal Default** modes.
-  Use **Preferences: Color Theme…** in F1, or Ctrl+K then Ctrl+T
-  in the editor. The picker shows palette swatches and supports filtering.
+  Open the bottom-left **Settings → Theme…**; the first Settings row shows
+  the current theme. **Preferences: Color Theme…** in F1 or Ctrl+K then Ctrl+T
+  in the editor also opens the picker. It shows palette swatches and supports filtering.
   Selecting a theme updates the workbench and syntax colors immediately and
   remembers it in your active config file, including a custom `--config` path.
 - Explorer has an inline filename/path filter, including files in collapsed
@@ -277,8 +278,7 @@ filter in a prompt. Filtering does not change the scope of commits or group/batc
 actions. F5 refreshes status. Errors and hook failures appear in the status
 message, with a persistent error summary in the sidebar. Commit messages and
 paths are passed directly to Git, never interpolated into shell commands.
-Configure Git name/email and signing separately as usual. There is no push,
-branch management, or discard-changes command in this release.
+Configure Git name/email and signing separately as usual. Use the clickable branch name or **Git: Manage Branches…** for local and remote-tracking branch operations. Network push/pull/fetch and discard-changes commands remain available through the terminal.
 
 Click the magnifier or use Ctrl+Shift+F for the Search sidebar. It searches after a short
 typing pause, or immediately with Enter / Go, using ripgrep regexes and smart
@@ -379,3 +379,24 @@ Code is divided into `text` (piece table/history), `editor` (documents/views),
 `config`. The UI event loop owns mutable editor state. Workers post immutable,
 version-checked results. The first release does not provide DAP debugging,
 extensions, remote development, Vim modes, or VS Code configuration imports.
+
+
+## Branch management
+
+Click the branch name in Source Control or the status bar, or run **Git: Manage Branches…** from F1. Filter local and locally known remote branches, then open a branch's actions. Create and switch from HEAD, create a remote tracking branch, switch local branches, rename, safely delete merged branches, merge into the current branch, and set an upstream. Branches checked out in another worktree are marked and cannot be switched to here.
+
+Switching and merging offer **Save all and continue** when editor buffers are modified. Cancelling keeps the branch and all unsaved buffers. Git decides whether saved working-tree changes can be carried across; SunBook never automatically stashes or discards them. Operations check that HEAD has not changed since the branch picker was loaded. Merge conflicts remain in the working tree and Source Control. Reopen Branches to **Abort current merge…**, which explicitly confirms discarding the merge resolution. Use the terminal for fetch/pull/push or other network operations.
+
+## Local process plugins
+
+Open the puzzle activity or **Plugins: Manage Installed Plugins**. **Install…** copies a local folder into `plugins/<id>/` alongside the active configuration file; the new plugin remains disabled until its manifest and editor permissions are reviewed. Use Enter for actions, `i` to install, `r` to refresh, and Esc to return to the editor. Settings also includes Plugins.
+
+Enable a trusted plugin to contribute F1 commands; disable it to stop its process and remove those commands. Text edits are previewed, version-checked, applied atomically to the active buffer, and undone in one step. Plugin output is shown in a scrollable result view. The status bar and sidebar show readiness, restart attempts and quarantine states. Ordinary command errors do not crash an extension; crashes, timeouts and protocol errors trigger bounded automatic restarts. **Restart plugin** clears a quarantine circuit. The host monitors health and installed package contents every 30 seconds; changing code or the manifest requires reapproval. The approval dialog shows platform protection; Ctrl+↑/↓ scrolls its details and ←/→ pans long permission lines on narrow screens.
+
+API v1 uses JSON-RPC over newline-delimited stdio and keeps plugins out of the editor process. On macOS, a required OS sandbox limits filesystem access and denies networking by default; declaring `network` explicitly allows it after review. A sandbox failure never falls back to unrestricted execution. Linux currently provides process isolation with normal OS user file/network permissions. Both platforms filter inherited environment variables and use a disposable private HOME/TMPDIR, removed on shutdown/restart. See [Plugin development and release rules](plugins.md), including the deprecated macOS backend and runtime boundaries, the [manifest schema](plugins/manifest-v1.schema.json), [Python SDK](../sdk/python/sunbook_plugin.py) and [installable example](../examples/text-tools).
+
+```sh
+sunbook --check-plugin /absolute/path/to/text-tools
+```
+
+This check starts local plugin code and verifies initialization and ping without running contributed commands. Install any required Python/Node runtime yourself. There is no marketplace or automatic download/update. Branch management and plugins are source-tree additions for the next release; the v0.1.0 download does not contain them.

@@ -16,12 +16,14 @@ import (
 var ErrConflict = errors.New("file changed on disk; reload or explicitly overwrite")
 
 type Document struct {
-	Buffer    *text.Buffer
-	Path      string
-	CRLF, BOM bool
-	saved     string
-	diskHash  [32]byte
-	Exists    bool
+	Buffer         *text.Buffer
+	Path           string
+	CRLF, BOM      bool
+	saved          string
+	diskHash       [32]byte
+	diskState      DiskState
+	saveGeneration uint64
+	Exists         bool
 }
 
 func New() *Document { return &Document{Buffer: text.New("")} }
@@ -34,10 +36,13 @@ func Open(path string) (*Document, error) {
 	if resolved, e := filepath.EvalSymlinks(path); e == nil {
 		path = resolved
 	}
+	var before os.FileInfo
 	if st, e := os.Stat(path); e == nil && !st.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", filepath.Base(path))
 	} else if e != nil && !os.IsNotExist(e) {
 		return nil, e
+	} else {
+		before = st
 	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -52,6 +57,14 @@ func Open(path string) (*Document, error) {
 		return nil, fmt.Errorf("%s is binary or not UTF-8", filepath.Base(path))
 	}
 	d := &Document{Path: path, Exists: true, diskHash: sha256.Sum256(data)}
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !(DiskState{info: before}).SameMetadata(DiskState{info: st}) {
+		return nil, ErrConflict
+	}
+	d.diskState = DiskState{info: st, Hash: d.diskHash}
 	d.BOM = bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	if d.BOM {
 		data = data[3:]
@@ -73,11 +86,11 @@ func (d *Document) DiskChanged() bool {
 	if d.Path == "" {
 		return false
 	}
-	data, err := os.ReadFile(d.Path)
+	state, err := InspectDisk(d.Path, DiskState{}, true)
 	if err != nil {
 		return d.Exists
 	}
-	return !d.Exists || sha256.Sum256(data) != d.diskHash
+	return !d.Exists || state.Hash != d.diskHash
 }
 func (d *Document) Save(force bool) error {
 	if d.Path == "" {
@@ -136,6 +149,10 @@ func (d *Document) Save(force bool) error {
 	d.saved = s
 	d.diskHash = sha256.Sum256([]byte(out))
 	d.Exists = true
+	d.saveGeneration++
+	if st, e := os.Stat(d.Path); e == nil {
+		d.diskState = DiskState{info: st, Hash: d.diskHash}
+	}
 	return nil
 }
 

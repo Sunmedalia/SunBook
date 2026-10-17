@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sunbook/internal/plugin"
 )
 
 func SaveIcons(path, files, activity string) error {
@@ -71,4 +72,8 @@ func saveSettings(path string, changes map[string]any) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+func SavePlugins(path string, preferences map[string]plugin.Preference) error {
+	return saveSettings(path, map[string]any{"plugins": preferences})
 }

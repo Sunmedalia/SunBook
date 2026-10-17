@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sunbook/internal/plugin"
 )
 
 type Server struct {
@@ -22,16 +23,17 @@ type Theme struct {
 	Syntax     string `json:"syntax,omitempty"`
 }
 type Config struct {
-	FilePath      string            `json:"-"`
-	ActivityIcons string            `json:"activityIcons"`
-	FileIcons     string            `json:"fileIcons"`
-	TabSize       int               `json:"tabSize"`
-	InsertSpaces  bool              `json:"insertSpaces"`
-	Shell         string            `json:"shell"`
-	PythonPath    string            `json:"pythonPath"`
-	Theme         Theme             `json:"theme"`
-	Keybindings   map[string]string `json:"keybindings"`
-	Servers       map[string]Server `json:"servers"`
+	Plugins       map[string]plugin.Preference `json:"plugins,omitempty"`
+	FilePath      string                       `json:"-"`
+	ActivityIcons string                       `json:"activityIcons"`
+	FileIcons     string                       `json:"fileIcons"`
+	TabSize       int                          `json:"tabSize"`
+	InsertSpaces  bool                         `json:"insertSpaces"`
+	Shell         string                       `json:"shell"`
+	PythonPath    string                       `json:"pythonPath"`
+	Theme         Theme                        `json:"theme"`
+	Keybindings   map[string]string            `json:"keybindings"`
+	Servers       map[string]Server            `json:"servers"`
 }
 
 func Default() Config {
@@ -145,6 +147,30 @@ func Doctor(c Config) string {
 			p = "MISSING"
 		}
 		out += fmt.Sprintf("%-27s %s\n", name, p)
+	}
+	configPath := c.FilePath
+	if configPath == "" {
+		configPath = Path()
+	}
+	pluginDir := filepath.Join(filepath.Dir(configPath), "plugins")
+	out += "\nPlugins: " + pluginDir + "\n"
+	out += "  Default isolation: " + plugin.IsolationDescription(plugin.Manifest{}) + "\n"
+	out += "  " + plugin.FileAccessDescription() + "\n"
+	entries, err := plugin.Discover(pluginDir)
+	if err != nil {
+		out += "  " + err.Error() + "\n"
+	}
+	for _, entry := range entries {
+		state := "disabled"
+		pref := c.Plugins[entry.Manifest.ID]
+		if entry.Error != "" {
+			state = "invalid: " + entry.Error
+		} else if pref.Enabled && pref.Fingerprint != entry.Fingerprint {
+			state = "package review required"
+		} else if pref.Enabled {
+			state = "enabled (runtime health is shown in Plugins)"
+		}
+		out += fmt.Sprintf("  %s %s · %s\n", entry.Manifest.ID, entry.Manifest.Version, state)
 	}
 	out += "\nLanguage servers are installed by the user. See README.md.\n"
 	return out

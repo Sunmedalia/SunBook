@@ -21,10 +21,12 @@ type gitEntry struct {
 }
 
 func sidebarFocus(f string) bool {
-	return f == "tree" || f == "filter" || f == "searchInput" || f == "search" || f == "searchInclude" || f == "searchExclude" || f == "git" || f == "gitMessage" || f == "gitFilter" || f == "gitLog"
+	return f == "plugins" || f == "tree" || f == "filter" || f == "searchInput" || f == "search" || f == "searchInclude" || f == "searchExclude" || f == "git" || f == "gitMessage" || f == "gitFilter" || f == "gitLog"
 }
 func (a *App) focusSidebar() {
 	switch a.sidebarView {
+	case "Plugins":
+		a.focus = "plugins"
 	case "Search":
 		a.focus = "searchInput"
 		a.searchCursor = len(a.searchQuery)
@@ -39,6 +41,9 @@ func (a *App) showSidebar(view string) {
 	a.sidebarView = view
 	a.completion = nil
 	a.focusSidebar()
+	if view == "Plugins" {
+		a.refreshPlugins()
+	}
 	if view == "Git" {
 		a.refreshGit()
 	}
@@ -59,6 +64,8 @@ func (a *App) toggleSidebarView(view string) {
 func (a *App) drawSidebar() {
 	a.fill(a.sideRect, a.chrome)
 	switch a.sidebarView {
+	case "Plugins":
+		a.drawPlugins()
 	case "Search":
 		a.drawSearchSidebar()
 	case "Git":
@@ -106,6 +113,31 @@ func revealList(top *int, rows []sidebarRow, selected, height int) {
 func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 	x, y := e.Position()
 	switch a.sidebarView {
+	case "Plugins":
+		if wheel != 0 {
+			a.pluginTop = max(0, min(a.pluginTop+wheel, max(0, len(a.pluginStatuses)-1)))
+			a.pluginSelected = max(a.pluginTop, min(a.pluginSelected, a.pluginTop+max(1, (a.sideRect.H-4)/3)-1))
+		}
+		if fresh {
+			a.focus = "plugins"
+		}
+		for _, hit := range a.sideHits {
+			if hit.contains(x, y) {
+				if hit.Index < len(a.pluginStatuses) {
+					status := a.pluginStatuses[hit.Index]
+					a.hoverHint = status.Entry.Manifest.Name + " · " + string(status.State)
+					if status.Error != "" {
+						a.hoverHint += " · " + status.Error
+					}
+				}
+				if !fresh {
+					return
+				}
+				a.pluginSelected = hit.Index
+				a.pluginDetails()
+				return
+			}
+		}
 	case "Search":
 		if a.searchOptionsMouse(x, y, fresh) {
 			return

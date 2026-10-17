@@ -6,7 +6,7 @@ import (
 	"sunbook/internal/text"
 )
 
-// Nerd Font symbols keep the three activities compact and visually consistent.
+// Nerd Font symbols keep the activities compact and visually consistent.
 // Unicode mode is available for terminals using an unpatched font.
 func (a *App) drawActivityBar() {
 	r := a.activityRect
@@ -18,6 +18,7 @@ func (a *App) drawActivityBar() {
 		{"Explorer", "activity.explorer", "Explorer (Ctrl+Shift+E)", "\uf07b", "▤"},
 		{"Search", "activity.search", "Search workspace (Ctrl+Shift+F)", "\uf002", "⌕"},
 		{"Git", "activity.git", "Source Control (Ctrl+Shift+G)", "\uf126", "⎇"},
+		{"Plugins", "activity.plugins", "Plugins: install and manage extensions", "\uf12e", "◇"},
 	}
 	for i, entry := range entries {
 		tile := rect{r.X, r.Y + i*3, r.W, 3}
@@ -56,7 +57,7 @@ func (a *App) drawActivityBar() {
 		if a.hoverCommand == "app.settings" {
 			style = style.Background(a.colors.hover).Foreground(a.accent.GetForeground())
 		}
-		if a.modal != nil && (a.modal.Title == "Settings" || a.modal.Title == "File Icon Theme" || a.modal.Title == "Button & Sidebar Icons") {
+		if a.modal != nil && (a.modal.Title == "Settings" || a.modal.Title == "Color Theme" || a.modal.Title == "File Icon Theme" || a.modal.Title == "Button & Sidebar Icons") {
 			style = style.Background(a.colors.selection).Foreground(a.accent.GetForeground())
 		}
 		face := rect{tile.X + 1, tile.Y + 1, tile.W - 2, 1}

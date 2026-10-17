@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -21,11 +22,22 @@ func (a *App) refreshGit() {
 		ctx, cancel := context.WithTimeout(a.ctx, 8*time.Second)
 		defer cancel()
 		status, err := gitservice.ReadStatus(ctx, root)
-		a.post(func() {
+		a.postQuiet(func() {
 			if seq != a.gitSeq || a.root != root {
 				return
 			}
 			a.gitReading = false
+			nextError := ""
+			if err != nil {
+				nextError = err.Error()
+			}
+			if (reflect.DeepEqual(a.git, status) || err != nil) && a.gitError == nextError {
+				if !a.gitLogReading && time.Since(a.gitLogRefreshed) >= time.Minute {
+					a.refreshGitLog()
+				}
+				return
+			}
+			a.invalidate()
 			if err != nil {
 				a.gitError = err.Error()
 				a.git = gitservice.Status{}
@@ -90,6 +102,8 @@ func (a *App) mutateGit(label string, run func(context.Context, string) error, d
 			a.gitOperation = ""
 			if err != nil {
 				a.gitActionError = err.Error()
+				a.checkFiles()
+				a.scanTree()
 				a.showError(err)
 			} else {
 				if done != nil {
@@ -253,6 +267,7 @@ func (a *App) commit() {
 func (a *App) gitMore() {
 	staged, changed, _ := a.gitCounts()
 	var items []item
+	items = append(items, item{Label: "Branches…", Detail: a.git.Branch, Action: a.branchManager})
 	if a.gitActionError != "" {
 		errText := a.gitActionError
 		items = append(items, item{Label: "Show last Git error", Action: func() { a.showText("Git Error", errText) }})

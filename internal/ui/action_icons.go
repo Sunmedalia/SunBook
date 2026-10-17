@@ -46,7 +46,11 @@ func (a *App) actionIcon(id, label string) string {
 		if label == "Bottom" {
 			nerd, plain = "\uf063", "↓"
 		}
-	case "git.refresh", "explorer.refresh", "file.reload":
+	case "plugins.manage", "plugins.install", "activity.plugins":
+		nerd, plain = "\uf12e", "◇"
+	case "git.branches":
+		nerd, plain = "\uf126", "⎇"
+	case "plugins.refresh", "git.refresh", "explorer.refresh", "file.reload":
 		nerd, plain = "\uf021", "R"
 	case "git.commit":
 		nerd, plain = "\uf00c", "✓"

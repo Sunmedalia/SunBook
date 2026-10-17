@@ -12,8 +12,22 @@
     "ctrl+k ctrl+o": "view.other"
   },
   "servers": {
-    "go": { "command": "gopls", "args": [] },
-    "python": { "command": "pyright-langserver", "args": ["--stdio"] },
-    "typescript": { "command": "typescript-language-server", "args": ["--stdio"] }
-  }
+    "go": {
+      "command": "gopls",
+      "args": []
+    },
+    "python": {
+      "command": "pyright-langserver",
+      "args": [
+        "--stdio"
+      ]
+    },
+    "typescript": {
+      "command": "typescript-language-server",
+      "args": [
+        "--stdio"
+      ]
+    }
+  },
+  "plugins": {}
 }

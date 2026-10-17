@@ -1,0 +1,13 @@
+{
+  "id": "text-tools",
+  "name": "Text Tools",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "description": "Count words and uppercase selections, including Unicode text.",
+  "command": ["python3", "main.py"],
+  "permissions": ["document.read", "document.edit"],
+  "commands": [
+    {"id": "word-count", "title": "Count Words"},
+    {"id": "uppercase-selection", "title": "Uppercase Selection"}
+  ]
+}

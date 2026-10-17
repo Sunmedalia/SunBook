@@ -19,6 +19,7 @@ import (
 	"sunbook/internal/editor"
 	gitservice "sunbook/internal/git"
 	"sunbook/internal/lsp"
+	"sunbook/internal/plugin"
 	"sunbook/internal/terminal"
 	"sunbook/internal/text"
 )
@@ -57,8 +58,9 @@ type modal struct {
 	Selected, Top                int
 	InputEnabled, Filter         bool
 	Compact                      bool
+	AutoHeight                   bool
 	Body                         []string
-	BodyTop, ListY, ListH        int
+	BodyTop, BodyH, ListY, ListH int
 	BodyLeft                     int
 	Submit                       func(string, int)
 	Changed                      func(string)
@@ -84,9 +86,21 @@ type App struct {
 	screen                                                tcell.Screen
 	cfg                                                   config.Config
 	root                                                  string
+	plugins                                               *plugin.Manager
+	pluginStatuses                                        []plugin.Status
+	pluginSelected, pluginTop                             int
+	pluginSelectID                                        string
+	lastPluginResult                                      *pluginOutcome
+	pluginRefreshing                                      bool
+	pluginRefreshPending                                  bool
 	ctx                                                   context.Context
 	cancel                                                context.CancelFunc
 	updates                                               chan func()
+	repaint                                               bool
+	lastDraw, nextDisk                                    time.Time
+	nextPluginScan                                        time.Time
+	maintenanceDue                                        map[*editor.Document]time.Time
+	maintenanceRunning                                    map[*text.Buffer]bool
 	docs                                                  []*editor.Document
 	preview                                               *editor.Document
 	views                                                 [2]*editor.View
@@ -119,6 +133,7 @@ type App struct {
 	newFileDirs                                           map[*editor.Document]string
 	expanded                                              map[string]bool
 	treeSeq                                               int
+	treeCancel                                            context.CancelFunc
 	modal                                                 *modal
 	commands                                              []command
 	bindings                                              map[string]string
@@ -133,13 +148,19 @@ type App struct {
 	serverErrors                                          map[string]string
 	opened                                                map[*editor.Document]*lsp.Client
 	diagnostics                                           map[string]lsp.Diagnostics
+	diagnosticCache                                       map[*editor.Document]*diagnosticCache
 	highlight                                             map[*editor.Document]highlights
 	highlightPending                                      map[*editor.Document]int
 	highlightDue                                          map[*editor.Document]time.Time
 	highlightRunning                                      map[*editor.Document]bool
+	completionCancel                                      context.CancelFunc
 	completion                                            *completionState
 	completionDue                                         time.Time
 	git                                                   gitservice.Status
+	branches                                              []gitservice.Branch
+	branchBase                                            gitservice.Status
+	branchSeq                                             int
+	mergeInProgress                                       bool
 	gitError                                              string
 	gitSelected, gitTop, problemSelected, problemTop      int
 	gitBusy                                               bool
@@ -174,6 +195,8 @@ type App struct {
 	terminalColors                                        terminal.DefaultColors
 	themeColorCache                                       map[tcell.Color]tcell.Color
 	fileCheck                                             bool
+	fileCheckForce                                        bool
+	fileStates                                            map[*editor.Document]filePollState
 	searchCancel                                          context.CancelFunc
 	searchQuery                                           string
 	searchCursor, searchOffset, searchSelected, searchTop int
@@ -250,6 +273,7 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 	a.sidebarView = "Explorer"
 	a.searchOptions.Regex = true
 	a.highlightRunning = map[*editor.Document]bool{}
+	a.plugins = plugin.NewManager(ctx, a.pluginDirectory())
 	a.initTheme()
 	a.screen.SetStyle(a.base)
 	a.registerCommands()
@@ -266,11 +290,15 @@ func New(screen tcell.Screen, cfg config.Config, path string) (*App, error) {
 func (a *App) view() *editor.View { return a.views[a.active] }
 func (a *App) post(f func()) {
 	select {
-	case a.updates <- f:
+	case a.updates <- func() { f(); a.invalidate() }:
 	case <-a.ctx.Done():
 	}
 }
-func (a *App) notify(s string) { a.message = s; a.messageUntil = time.Now().Add(8 * time.Second) }
+func (a *App) notify(s string) {
+	a.message = s
+	a.messageUntil = time.Now().Add(8 * time.Second)
+	a.invalidate()
+}
 func (a *App) showError(err error) {
 	if err != nil {
 		a.notify(err.Error())
@@ -284,49 +312,46 @@ func (a *App) Run() error {
 	a.screen.SetTitle("SunBook — " + filepath.Base(a.root))
 	a.screen.SetCursorStyle(tcell.CursorStyleSteadyBar)
 	a.scanTree()
+	a.refreshPlugins()
 	a.refreshGit()
 	for _, d := range a.docs {
 		a.startLanguage(d)
 		a.scheduleHighlight(d)
 	}
-	tick := time.NewTicker(80 * time.Millisecond)
-	defer tick.Stop()
-	diskTick := time.NewTicker(2 * time.Second)
-	defer diskTick.Stop()
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	a.nextDisk = time.Now().Add(2 * time.Second)
+	a.nextPluginScan = time.Now().Add(30 * time.Second)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(sigs)
 	a.draw()
+	a.repaint = false
+	a.lastDraw = time.Now()
 	var paste strings.Builder
 	inPaste := false
 	for !a.quit {
+		now := time.Now()
+		a.runScheduled(now)
+		a.paintIfDue(now)
+		timer.Reset(time.Until(a.nextWake(time.Now())))
 		select {
 		case <-a.ctx.Done():
 			return nil
 		case <-sigs:
 			a.confirmExit()
+		case <-a.plugins.Changes:
+			a.updatePluginCommands()
 		case f := <-a.updates:
 			f()
-		case <-diskTick.C:
-			a.requestTerminalColors()
-			a.checkFiles()
-			a.refreshGit()
-		case <-tick.C:
-			a.refreshTerminalTheme()
-			a.flushHighlights()
-			if !a.searchDue.IsZero() && !time.Now().Before(a.searchDue) {
-				a.startWorkspaceSearch()
-			}
-			if !a.completionDue.IsZero() && time.Now().After(a.completionDue) {
-				a.completionDue = time.Time{}
-				a.requestCompletion(false)
-			}
+		case <-timer.C:
 		case ev, ok := <-a.screen.EventQ():
 			if !ok {
 				return nil
 			}
 			switch e := ev.(type) {
 			case *tcell.EventResize:
+				a.invalidate()
 				a.tabDrag = nil
 				a.scrollDrag = nil
 				a.screen.Sync()
@@ -338,6 +363,7 @@ func (a *App) Run() error {
 				if e.End() {
 					inPaste = false
 					a.paste(paste.String())
+					a.invalidate()
 					paste.Reset()
 				}
 			case *tcell.EventKey:
@@ -348,22 +374,37 @@ func (a *App) Run() error {
 					paste.WriteString(pasteText(e))
 				} else {
 					a.key(e)
+					a.invalidate()
 				}
 			case *tcell.EventMouse:
 				a.mouse(e)
+				a.invalidate()
 			case *tcell.EventFocus:
+				a.cancelCompletion()
 				if e.Focused {
 					a.requestTerminalColors()
 					a.checkFiles()
 				}
 			}
 		}
-		a.draw()
+		// Keep PTY dimensions in step with layout before the next input event;
+		// frame coalescing must not delay shell resize behind subsequent keys.
+		a.layout()
+		if a.term != nil && a.panel == "Terminal" && a.panelRect.H > 0 {
+			_ = a.term.Resize(max(1, a.panelRect.W), max(1, a.panelRect.H))
+		}
+		a.refreshTerminalTheme()
 	}
 	return nil
 }
 func (a *App) Close() {
 	a.cancel()
+	if a.plugins != nil {
+		a.plugins.Close()
+	}
+	if a.treeCancel != nil {
+		a.treeCancel()
+	}
 	if a.treeIndexCancel != nil {
 		a.treeIndexCancel()
 	}
@@ -381,6 +422,7 @@ func (a *App) addDocument(d *editor.Document) {
 	a.scheduleHighlight(d)
 }
 func (a *App) activate(d *editor.Document) {
+	a.cancelCompletion()
 	if a.split && a.views[1-a.active] != nil && a.views[1-a.active].Doc == d {
 		a.keepDocument(d)
 	}
@@ -452,6 +494,8 @@ func (a *App) openFile(path string, preview bool) error {
 	return nil
 }
 func (a *App) changed(d *editor.Document) {
+	a.scheduleMaintenance(d)
+	a.cancelCompletion()
 	a.keepDocument(d)
 	for _, cache := range a.viewCache {
 		if v := cache[d]; v != nil {
@@ -467,6 +511,7 @@ func (a *App) changed(d *editor.Document) {
 		c.Change(d.Path, d.Buffer.String(), d.Buffer.Version)
 	}
 	delete(a.diagnostics, lsp.URI(d.Path))
+	delete(a.diagnosticCache, d)
 	a.scheduleHighlight(d)
 	a.completion = nil
 	if a.focus == "editor" {
@@ -549,75 +594,6 @@ func (a *App) startTerminal() {
 	}
 	a.newTerminal()
 }
-func (a *App) checkFiles() {
-	if a.fileCheck {
-		return
-	}
-	a.fileCheck = true
-	type check struct {
-		doc      *editor.Document
-		snapshot editor.Document
-		version  int
-		reloaded *editor.Document
-		changed  bool
-		err      error
-	}
-	checks := make([]check, 0, len(a.docs))
-	for _, d := range a.docs {
-		if d.Path != "" {
-			checks = append(checks, check{doc: d, snapshot: *d, version: d.Buffer.Version})
-		}
-	}
-	go func() {
-		for i := range checks {
-			c := &checks[i]
-			c.changed = c.snapshot.DiskChanged()
-			if c.changed {
-				c.reloaded, c.err = editor.Open(c.snapshot.Path)
-			}
-		}
-		a.post(func() {
-			a.fileCheck = false
-			for _, c := range checks {
-				if !c.changed || c.doc.Buffer.Version != c.version || c.doc.Path != c.snapshot.Path || !c.doc.DiskChanged() {
-					continue
-				}
-				stillOpen := false
-				for _, d := range a.docs {
-					if d == c.doc {
-						stillOpen = true
-						break
-					}
-				}
-				if !stillOpen {
-					continue
-				}
-				if c.err != nil {
-					a.notify("External change: " + c.err.Error())
-					continue
-				}
-				if c.doc.Dirty() {
-					a.notify(c.doc.Name() + " changed on disk. Save will offer conflict resolution.")
-					continue
-				}
-				if !c.reloaded.Exists {
-					a.notify(c.doc.Name() + " was removed on disk")
-					continue
-				}
-				oldVersion := c.doc.Buffer.Version
-				*c.doc = *c.reloaded
-				c.doc.Buffer.Version = oldVersion + 1
-				for _, v := range a.views {
-					if v != nil && v.Doc == c.doc {
-						v.Clamp()
-					}
-				}
-				a.changed(c.doc)
-				a.notify(c.doc.Name() + " reloaded")
-			}
-		})
-	}()
-}
 func (a *App) save(d *editor.Document, done func()) {
 	if d.Path == "" {
 		a.saveAs(d, done)
@@ -657,6 +633,7 @@ func (a *App) saveForce(d *editor.Document, done func()) {
 }
 func (a *App) saved(d *editor.Document) {
 	delete(a.newFileDirs, d)
+	delete(a.fileStates, d)
 	a.keepDocument(d)
 	a.rememberFile(d.Path)
 	a.notify("Saved " + d.Name())
@@ -703,6 +680,7 @@ func (a *App) saveAs(d *editor.Document, done func()) {
 				delete(a.opened, d)
 			}
 			delete(a.diagnostics, lsp.URI(old))
+			delete(a.diagnosticCache, d)
 			delete(a.highlightPending, d)
 			a.scheduleHighlight(d)
 			a.saved(d)
@@ -733,6 +711,10 @@ func (a *App) closeDocument(d *editor.Document) {
 	comparison := a.comparison
 	wasComparing := a.comparing()
 	a.confirmDocument(d, func() {
+		if a.lastPluginResult != nil && a.lastPluginResult.doc == d {
+			a.lastPluginResult.doc = nil
+			a.lastPluginResult.buffer = nil
+		}
 		a.keepDocument(d)
 		for i, v := range a.docs {
 			if v == d {
@@ -745,10 +727,13 @@ func (a *App) closeDocument(d *editor.Document) {
 			delete(a.opened, d)
 		}
 		delete(a.diagnostics, lsp.URI(d.Path))
+		delete(a.diagnosticCache, d)
 		delete(a.highlight, d)
 		delete(a.highlightPending, d)
 		delete(a.highlightDue, d)
+		delete(a.maintenanceDue, d)
 		delete(a.newFileDirs, d)
+		delete(a.fileStates, d)
 		for i := range a.viewCache {
 			delete(a.viewCache[i], d)
 		}
@@ -807,11 +792,15 @@ func (a *App) switchWorkspace() {
 				go c.Close()
 			}
 			a.languageSeq++
+			a.lastPluginResult = nil
 			a.clients = map[string]*lsp.Client{}
 			a.starting = map[string]bool{}
 			a.serverErrors = map[string]string{}
 			a.opened = map[*editor.Document]*lsp.Client{}
 			a.diagnostics = map[string]lsp.Diagnostics{}
+			a.diagnosticCache = nil
+			a.fileStates = nil
+			a.maintenanceDue = nil
 			a.highlight = map[*editor.Document]highlights{}
 			a.highlightPending = map[*editor.Document]int{}
 			a.highlightDue = map[*editor.Document]time.Time{}
@@ -856,6 +845,7 @@ func (a *App) switchWorkspace() {
 			a.treePath, a.newFileDir = "", ""
 			a.newFileDirs = nil
 			a.docs = nil
+			a.fileStates = nil
 			a.preview = nil
 			a.fileClick = fileClick{}
 			a.views = [2]*editor.View{}

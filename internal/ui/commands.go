@@ -31,6 +31,11 @@ func (a *App) registerCommands() {
 		{"app.quit", "Quit SunBook", "ctrl+q", a.confirmExit},
 		{"app.commands", "Show Command Palette", "ctrl+shift+p", a.palette},
 		{"app.help", "Help: Keyboard Shortcuts", "", a.help},
+		{"plugins.manage", "Plugins: Manage Installed Plugins", "", func() { a.showSidebar("Plugins") }},
+		{"plugins.lastResult", "Plugins: Show Last Result", "", a.showLastPluginResult},
+		{"plugins.install", "Plugins: Install Local Plugin…", "", a.installPlugin},
+		{"plugins.refresh", "Plugins: Refresh Installed Plugins", "", a.refreshPlugins},
+		{"activity.plugins", "Activity: Toggle Plugins", "", func() { a.toggleSidebarView("Plugins") }},
 		{"app.settings", "Preferences: Settings…", "", a.settings},
 		{"view.fileIcons", "Preferences: File Icon Theme…", "", a.chooseFileIcons},
 		{"view.actionIcons", "Preferences: Button & Sidebar Icons…", "", a.chooseActionIcons},
@@ -118,6 +123,7 @@ func (a *App) registerCommands() {
 		{"language.rename", "Language: Rename Symbol", "f2", a.renameSymbol},
 		{"language.format", "Language: Format Document", "alt+shift+f", a.format},
 		{"language.restart", "Language: Restart Language Servers", "", a.restartLanguages},
+		{"git.branches", "Git: Manage Branches…", "", a.branchManager},
 		{"git.refresh", "Git: Refresh", "", a.refreshGit},
 		{"git.stage", "Git: Stage Selected File", "", func() { a.gitAction(true) }},
 		{"git.unstage", "Git: Unstage Selected File", "", func() { a.gitAction(false) }},
@@ -176,30 +182,38 @@ func (a *App) execute(id string) {
 			return
 		}
 	}
+	if strings.HasPrefix(id, "plugin.") {
+		a.notify("Plugin command unavailable; open Plugins to enable or review it")
+		return
+	}
 	a.notify("Unknown command: " + id)
 }
 func (a *App) palette() {
 	var items []item
 	for _, cmd := range a.commands {
 		cmd := cmd
-		items = append(items, item{Label: a.actionLabel(cmd.ID, cmd.Label, false), Detail: cmd.Key, Action: func() { a.execute(cmd.ID) }})
+		items = append(items, item{Label: a.actionLabel(cmd.ID, cmd.Label, false), Detail: strings.Join(a.commandKeys(cmd.ID), " / "), Action: func() { a.execute(cmd.ID) }})
 	}
 	a.setModal(&modal{Title: "Command Palette", InputEnabled: true, Filter: true, Items: items, Hint: "Type a command · Enter runs · Esc closes"})
+}
+func (a *App) commandKeys(id string) []string {
+	var keys []string
+	for key, bound := range a.bindings {
+		if bound == id {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 func (a *App) help() {
 	var body strings.Builder
 	body.WriteString("KEYBOARD SHORTCUTS\nCurrent keybindings, including your configured overrides.\n\n")
 	for _, c := range a.commands {
-		var keys []string
-		for key, id := range a.bindings {
-			if id == c.ID {
-				keys = append(keys, key)
-			}
-		}
+		keys := a.commandKeys(c.ID)
 		if len(keys) == 0 {
 			continue
 		}
-		sort.Strings(keys)
 		fmt.Fprintf(&body, "%-26s %s\n", strings.Join(keys, " / "), c.Label)
 	}
 	body.WriteString(`
@@ -248,7 +262,15 @@ h / Tab                  Focus log / switch lists
 Enter / click (log)      Expand commit files / folders; view file comparison
 Left / Right (log)       Collapse / expand the selected tree node
 d (log)                  View the full commit patch
+b                        Manage local and remote branches
 m                        More Git actions
+
+PLUGINS
+Enter (Plugins sidebar)  Open plugin actions and commands
+i / r (Plugins sidebar)  Install a local folder / refresh installed plugins
+Enable plugin            Review permissions and start a trusted local process
+Restart plugin           Recover a quarantined plugin; reset retry circuit
+Plugin edits             Preview before applying; Ctrl+Z undoes the transaction
 
 COMPARISON
 Tab                      Switch comparison pane

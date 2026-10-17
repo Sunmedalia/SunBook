@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"sunbook/internal/plugin"
 	"testing"
 )
 
@@ -83,5 +85,28 @@ func TestIconSettingsValidateAndKeepInvalidConfigIntact(t *testing.T) {
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("icon save replaced the config symlink", err)
+	}
+}
+
+func TestPluginPreferencesPreserveOtherSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"tabSize":2,"custom":{"keep":true},"theme":{"name":"nord"}}`), 0640); err != nil {
+		t.Fatal(err)
+	}
+	prefs := map[string]plugin.Preference{"text-tools": {Enabled: true, Fingerprint: strings.Repeat("a", 64)}}
+	if err := SavePlugins(path, prefs); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.TabSize != 2 || cfg.Theme.Name != "nord" || !cfg.Plugins["text-tools"].Enabled {
+		t.Fatal(cfg, err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), `"custom"`) {
+		t.Fatal("unknown config was lost")
+	}
+	info, _ := os.Stat(path)
+	if info.Mode().Perm() != 0640 {
+		t.Fatal("permissions changed")
 	}
 }

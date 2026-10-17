@@ -175,8 +175,10 @@ func (a *App) draw() {
 	a.drawTabDrop()
 	hint := "F1 Commands   Ctrl+P Files   Ctrl+S Save   Ctrl+Q Quit"
 	switch a.focus {
+	case "plugins":
+		hint = "Enter Actions · i Install plugin · r Refresh · Esc Editor"
 	case "git":
-		hint = "Enter Diff · s Stage · u Unstage · c Message · / Filter · m More · h History"
+		hint = "Enter Diff · s Stage · u Unstage · b Branches · c Message · / Filter · m More · h History"
 	case "gitMessage":
 		hint = "Enter Commit staged · Tab Filter · Ctrl+U Clear · Esc File list"
 	case "gitFilter":
@@ -294,7 +296,7 @@ func (a *App) drawEditor(group int) {
 	if hl.Version != b.Version {
 		hl.Spans = nil
 	}
-	diags := a.diagnostics[lsp.URI(v.Doc.Path)].Diagnostics
+	diags := a.cachedDiagnostics(v.Doc)
 	matchA, matchB := matchingBrackets(b.String(), v.Head())
 	for dy := 0; dy < r.H; dy++ {
 		row := v.Top + dy
@@ -313,12 +315,9 @@ func (a *App) drawEditor(group int) {
 			numberStyle = a.accent
 		}
 		a.put(r.X, y, gutter-1, fmt.Sprintf("%*d", gutter-2, row+1), numberStyle)
-		for _, d := range diags {
-			if d.Range.Start.Line == row {
-				style := a.base.Foreground(a.colors.danger)
-				a.put(r.X+gutter-1, y, 1, "!", style)
-				break
-			}
+		rowDiagnostics := diags.row(row)
+		if rowDiagnostics.marker {
+			a.put(r.X+gutter-1, y, 1, "!", a.base.Foreground(a.colors.danger))
 		}
 		line := b.Line(row)
 		offset := b.LineStart(row)
@@ -345,14 +344,10 @@ func (a *App) drawEditor(group int) {
 					style = style.Background(a.colors.line)
 				}
 			}
-			for _, diag := range diags {
-				if row < diag.Range.Start.Line || row > diag.Range.End.Line {
-					continue
-				}
-				start := lsp.Offset(b, diag.Range.Start)
-				end := lsp.Offset(b, diag.Range.End)
-				if p >= start && p < end {
+			for _, diag := range rowDiagnostics.spans {
+				if p >= diag.start && p < diag.end {
 					style = style.Underline(true)
+					break
 				}
 			}
 			if p == matchA || p == matchB {
@@ -658,6 +653,19 @@ func (a *App) drawModal() {
 	w, h := a.screen.Size()
 	width := max(1, min(96, w-4))
 	height := min(h-2, 20)
+	if m.AutoHeight && !m.Compact {
+		height = 5 + min(10, len(m.Items))
+		if m.InputEnabled {
+			height += 2
+		}
+		if len(m.Body) > 0 && len(m.Items) > 0 {
+			height += min(5, len(m.Body)) + 1
+			if len(m.Body) > 5 {
+				height++
+			}
+		}
+		height = min(h-2, max(6, height))
+	}
 	if m.Compact {
 		width = max(1, min(64, w-4))
 		height = min(h-2, 3+min(6, len(m.Visible)))
@@ -721,12 +729,20 @@ func (a *App) drawModal() {
 		a.drawOpenNavigation(m, rect{x + 2, y + 1, width - 4, 1})
 	}
 	if len(m.Body) > 0 && len(m.Items) > 0 {
-		for i := 0; i < min(5, len(m.Body)) && contentY < y+height-5; i++ {
-			a.put(x+2, contentY, width-4, m.Body[i+m.BodyTop], a.muted)
+		bodySpace := max(0, y+height-5-contentY)
+		m.BodyH = min(5, len(m.Body), bodySpace)
+		if len(m.Body) > m.BodyH && bodySpace == m.BodyH && m.BodyH > 1 {
+			m.BodyH-- // Keep a scroll hint visible above the action list.
+		}
+		m.BodyTop = max(0, min(m.BodyTop, len(m.Body)-max(1, m.BodyH)))
+		for i := 0; i < m.BodyH; i++ {
+			line := m.Body[i+m.BodyTop]
+			offset := text.Offset(line, m.BodyLeft, a.cfg.TabSize)
+			a.put(x+2, contentY, width-4, line[offset:], a.muted)
 			contentY++
 		}
-		if len(m.Body) > 5 {
-			a.put(x+2, contentY, width-4, "Ctrl+↑/↓ or wheel scrolls preview", a.muted)
+		if len(m.Body) > m.BodyH && bodySpace > m.BodyH {
+			a.put(x+2, contentY, width-4, "Ctrl+↑/↓ scroll · ←/→ pan", a.muted)
 			contentY++
 		}
 		contentY++

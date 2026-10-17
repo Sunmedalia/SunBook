@@ -23,9 +23,9 @@ type stdio struct {
 
 func (stdio) Close() error { return nil }
 
-type fakeServer struct{}
+type fakeServer struct{ contents string }
 
-func (fakeServer) Handle(ctx context.Context, c *jsonrpc2.Conn, r *jsonrpc2.Request) {
+func (s *fakeServer) Handle(ctx context.Context, c *jsonrpc2.Conn, r *jsonrpc2.Request) {
 	var result any
 	switch r.Method {
 	case "initialize":
@@ -39,11 +39,26 @@ func (fakeServer) Handle(ctx context.Context, c *jsonrpc2.Conn, r *jsonrpc2.Requ
 		}
 		json.Unmarshal(*r.Params, &p)
 		c.Notify(ctx, "textDocument/publishDiagnostics", Diagnostics{URI: p.TextDocument.URI, Version: &p.TextDocument.Version, Diagnostics: []Diagnostic{{Message: "test diagnostic", Range: Range{Start: Position{0, 1}, End: Position{0, 2}}, Severity: 1}}})
+	case "textDocument/didChange":
+		var p struct {
+			ContentChanges []struct {
+				Text string `json:"text"`
+			} `json:"contentChanges"`
+		}
+		json.Unmarshal(*r.Params, &p)
+		if len(p.ContentChanges) > 0 {
+			s.contents = p.ContentChanges[0].Text
+		}
+	case "test/contents":
+		result = s.contents
+	case "test/notify":
+		c.Notify(ctx, "window/logMessage", map[string]string{"message": "stall"})
 	case "textDocument/completion":
 		result = []Completion{{Label: "Hello"}}
 	case "textDocument/definition":
 		result = Location{URI: "file:///tmp/test.go", Range: Range{Start: Position{0, 0}, End: Position{0, 1}}}
 	case "test/stall":
+		c.Notify(ctx, "window/logMessage", map[string]string{"message": "stall"})
 		return
 	case "shutdown":
 	case "exit":
@@ -58,7 +73,7 @@ func TestServerHelper(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	c := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(stdio{os.Stdin, os.Stdout}, jsonrpc2.VSCodeObjectCodec{}), fakeServer{})
+	c := jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(stdio{os.Stdin, os.Stdout}, jsonrpc2.VSCodeObjectCodec{}), &fakeServer{})
 	<-c.DisconnectNotify()
 	os.Exit(0)
 }
@@ -89,7 +104,7 @@ func TestStdioLifecycleDiagnosticsAndCancellation(t *testing.T) {
 		t.Fatal("no diagnostics")
 	}
 	done := make(chan error, 1)
-	c.Request("textDocument/completion", nil, func(raw json.RawMessage, e error) {
+	c.Request(ctx, "textDocument/completion", nil, func(raw json.RawMessage, e error) {
 		items, err := ParseCompletion(raw)
 		if e != nil {
 			done <- e
@@ -109,7 +124,7 @@ func TestStdioLifecycleDiagnosticsAndCancellation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("request timeout")
 	}
-	c.Request("test/stall", nil, func(_ json.RawMessage, e error) { done <- e })
+	c.Request(ctx, "test/stall", nil, func(_ json.RawMessage, e error) { done <- e })
 	cancel()
 	select {
 	case e := <-done:
@@ -179,7 +194,7 @@ func TestRealServers(t *testing.T) {
 			_, lang := config.Language(path)
 			c.Open(path, lang, tc.source, 1)
 			done := make(chan error, 1)
-			c.Request("textDocument/completion", map[string]any{"textDocument": map[string]string{"uri": URI(path)}, "position": tc.position}, func(raw json.RawMessage, e error) {
+			c.Request(context.Background(), "textDocument/completion", map[string]any{"textDocument": map[string]string{"uri": URI(path)}, "position": tc.position}, func(raw json.RawMessage, e error) {
 				if e != nil {
 					done <- e
 					return
@@ -238,7 +253,7 @@ func verifyRealFeatures(t *testing.T, c *Client, key, path string, diagnostics <
 			err error
 		}
 		ch := make(chan response, 1)
-		c.Request(method, p, func(raw json.RawMessage, e error) { ch <- response{raw, e} })
+		c.Request(context.Background(), method, p, func(raw json.RawMessage, e error) { ch <- response{raw, e} })
 		select {
 		case r := <-ch:
 			if r.err != nil {

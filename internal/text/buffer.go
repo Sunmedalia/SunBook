@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/rivo/uniseg"
@@ -35,82 +34,118 @@ type transaction struct {
 }
 
 type Buffer struct {
-	original  string
-	added     []byte
-	pieces    []piece
-	cache     string
-	valid     bool
-	lines     []int
-	history   []transaction
-	index     int
-	Version   int
-	LastEdits []Edit
+	length            int
+	historyGeneration uint64
+	maintenanceBytes  int
+	original          string
+	added             []byte
+	pieces            []piece
+	cache             string
+	valid             bool
+	lines             []int
+	history           []transaction
+	index             int
+	Version           int
+	LastEdits         []Edit
 }
 
 func New(s string) *Buffer {
-	b := &Buffer{original: s, Version: 1}
+	b := &Buffer{original: s, cache: s, valid: true, length: len(s), Version: 1, lines: []int{0}}
 	if len(s) > 0 {
 		b.pieces = []piece{{Len: len(s)}}
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			b.lines = append(b.lines, i+1)
+		}
 	}
 	return b
 }
 func (b *Buffer) String() string {
 	if !b.valid {
-		var out strings.Builder
-		for _, p := range b.pieces {
-			if p.Added {
-				out.Write(b.added[p.Start : p.Start+p.Len])
-			} else {
-				out.WriteString(b.original[p.Start : p.Start+p.Len])
+		if len(b.pieces) == 1 && !b.pieces[0].Added {
+			p := b.pieces[0]
+			b.cache = b.original[p.Start : p.Start+p.Len]
+		} else {
+			var out strings.Builder
+			out.Grow(b.length)
+			for _, p := range b.pieces {
+				if p.Added {
+					out.Write(b.added[p.Start : p.Start+p.Len])
+				} else {
+					out.WriteString(b.original[p.Start : p.Start+p.Len])
+				}
 			}
+			b.cache = out.String()
 		}
-		b.cache = out.String()
 		b.valid = true
-		b.lines = []int{0}
-		for i, c := range b.cache {
-			if c == '\n' {
-				b.lines = append(b.lines, i+1)
-			}
-		}
 	}
 	return b.cache
 }
-func (b *Buffer) Len() int       { return len(b.String()) }
-func (b *Buffer) LineCount() int { _ = b.String(); return len(b.lines) }
-func (b *Buffer) LineStart(row int) int {
-	_ = b.String()
-	return b.lines[max(0, min(row, len(b.lines)-1))]
-}
+func (b *Buffer) Len() int              { return b.length }
+func (b *Buffer) LineCount() int        { return len(b.lines) }
+func (b *Buffer) LineStart(row int) int { return b.lines[max(0, min(row, len(b.lines)-1))] }
 func (b *Buffer) LineEnd(row int) int {
-	_ = b.String()
 	if row+1 < len(b.lines) {
 		return b.lines[row+1] - 1
 	}
-	return len(b.cache)
+	return b.length
 }
 func (b *Buffer) Line(row int) string { return b.String()[b.LineStart(row):b.LineEnd(row)] }
 func (b *Buffer) Position(offset int) (row, col int) {
-	_ = b.String()
-	offset = max(0, min(offset, len(b.cache)))
+	offset = max(0, min(offset, b.length))
 	row = sort.Search(len(b.lines), func(i int) bool { return b.lines[i] > offset }) - 1
 	return row, offset - b.lines[row]
+}
+
+// Update newline offsets without scanning or materializing unchanged text.
+// Multiple edits are applied from right to left in the original coordinate space.
+func (b *Buffer) updateLines(e Edit) {
+	left := sort.Search(len(b.lines), func(i int) bool { return b.lines[i] > e.Start })
+	right := sort.Search(len(b.lines), func(i int) bool { return b.lines[i] > e.End })
+	n := strings.Count(e.Text, "\n")
+	oldLen := len(b.lines)
+	nextLen := oldLen - (right - left) + n
+	if nextLen > oldLen {
+		b.lines = append(b.lines, make([]int, nextLen-oldLen)...)
+	}
+	copy(b.lines[left+n:], b.lines[right:oldLen])
+	b.lines = b.lines[:nextLen]
+	delta := len(e.Text) - (e.End - e.Start)
+	for i := left + n; i < len(b.lines); i++ {
+		b.lines[i] += delta
+	}
+	at := left
+	for i := 0; i < len(e.Text); i++ {
+		if e.Text[i] == '\n' {
+			b.lines[at] = e.Start + i + 1
+			at++
+		}
+	}
+	b.length += delta
 }
 func (b *Buffer) snap(sels []Selection) snapshot {
 	return snapshot{append([]piece(nil), b.pieces...), append([]Selection(nil), sels...)}
 }
 func (b *Buffer) restore(s snapshot) []Selection {
+	for i := len(b.LastEdits) - 1; i >= 0; i-- {
+		b.updateLines(b.LastEdits[i])
+	}
 	b.pieces = append([]piece(nil), s.Pieces...)
 	b.valid = false
 	b.Version++
 	return append([]Selection(nil), s.Selections...)
 }
 func (b *Buffer) replace(start, end int, s string) {
+	b.updateLines(Edit{Start: start, End: end, Text: s})
+	b.maintenanceBytes += len(s) + (end - start)
 	var ps []piece
 	pos := 0
 	insert := func() {
 		if s != "" {
 			at := len(b.added)
 			b.added = append(b.added, s...)
+
 			ps = append(ps, piece{true, at, len(s)})
 		}
 	}
@@ -174,10 +209,13 @@ func (b *Buffer) Apply(edits []Edit, before, after []Selection) bool {
 			return false
 		}
 	}
+	for i := range edits {
+		edits[i].Text = strings.Clone(edits[i].Text)
+	}
 	t := transaction{Before: b.snap(before), Forward: edits}
 	delta := 0
 	for _, e := range edits {
-		t.Backward = append(t.Backward, Edit{Start: e.Start + delta, End: e.Start + delta + len(e.Text), Text: s[e.Start:e.End]})
+		t.Backward = append(t.Backward, Edit{Start: e.Start + delta, End: e.Start + delta + len(e.Text), Text: strings.Clone(s[e.Start:e.End])})
 		delta += len(e.Text) - (e.End - e.Start)
 	}
 	for i := len(edits) - 1; i >= 0; i-- {
@@ -187,8 +225,11 @@ func (b *Buffer) Apply(edits []Edit, before, after []Selection) bool {
 	b.Version++
 	b.LastEdits = edits
 	t.After = b.snap(after)
+	clear(b.history[b.index:])
 	b.history = append(b.history[:b.index], t)
+	b.historyGeneration++
 	if len(b.history) > 1000 {
+		b.history[0] = transaction{}
 		b.history = b.history[1:]
 	}
 	b.index = len(b.history)
@@ -209,8 +250,8 @@ func (b *Buffer) Redo() ([]Selection, bool) {
 	if b.index >= len(b.history) {
 		return nil, false
 	}
-	s := b.restore(b.history[b.index].After)
 	b.LastEdits = b.history[b.index].Forward
+	s := b.restore(b.history[b.index].After)
 	b.index++
 	return s, true
 }
@@ -364,7 +405,14 @@ func Offset(s string, col, tab int) int {
 // LSPPosition/LSPOffset use UTF-16 code units, the LSP default encoding.
 func (b *Buffer) LSPPosition(offset int) (int, int) {
 	r, c := b.Position(offset)
-	return r, len(utf16.Encode([]rune(b.Line(r)[:c])))
+	units := 0
+	for _, r := range b.Line(r)[:c] {
+		units++
+		if r > 0xffff {
+			units++
+		}
+	}
+	return r, units
 }
 func (b *Buffer) LSPOffset(row, col int) int {
 	row = max(0, min(row, b.LineCount()-1))

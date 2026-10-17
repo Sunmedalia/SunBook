@@ -52,6 +52,8 @@ func (a *App) buttonEnabled(id string) bool {
 			}
 		}
 		return false
+	case "git.branches":
+		return a.git.Root != "" && !a.gitBusy
 	case "git.more":
 		return a.git.Root != ""
 	case "git.refresh":

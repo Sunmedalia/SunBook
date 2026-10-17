@@ -1,0 +1,51 @@
+goos: darwin
+goarch: arm64
+pkg: sunbook/internal/text
+cpu: Apple M4
+BenchmarkEditLargeDocument-10    	     500	   2131247 ns/op	 7509852 B/op	      42 allocs/op
+BenchmarkEditLargeDocument-10    	     546	   2194794 ns/op	 7509832 B/op	      42 allocs/op
+BenchmarkEditLargeDocument-10    	     546	   2201389 ns/op	 7509832 B/op	      42 allocs/op
+BenchmarkEditLargeDocument-10    	     537	   2184749 ns/op	 7509830 B/op	      42 allocs/op
+BenchmarkEditLargeDocument-10    	     548	   2233101 ns/op	 7509832 B/op	      42 allocs/op
+PASS
+ok  	sunbook/internal/text	7.340s
+goos: darwin
+goarch: arm64
+pkg: sunbook/internal/ui
+cpu: Apple M4
+BenchmarkDiagnosticRendering-10    	    1786	    653958 ns/op	   47465 B/op	    2161 allocs/op
+BenchmarkDiagnosticRendering-10    	    1785	    656355 ns/op	   47455 B/op	    2161 allocs/op
+BenchmarkDiagnosticRendering-10    	    1818	    666111 ns/op	   47457 B/op	    2161 allocs/op
+BenchmarkDiagnosticRendering-10    	    1825	    706528 ns/op	   47458 B/op	    2161 allocs/op
+BenchmarkDiagnosticRendering-10    	    1756	    675517 ns/op	   47457 B/op	    2161 allocs/op
+BenchmarkTerminalOutput-10         	    4366	    375141 ns/op	  125155 B/op	    1378 allocs/op
+BenchmarkTerminalOutput-10         	    4497	    375329 ns/op	  125144 B/op	    1378 allocs/op
+BenchmarkTerminalOutput-10         	    4390	    375796 ns/op	  125148 B/op	    1378 allocs/op
+BenchmarkTerminalOutput-10         	    4407	    383245 ns/op	  125148 B/op	    1378 allocs/op
+BenchmarkTerminalOutput-10         	    4534	    377001 ns/op	  125142 B/op	    1378 allocs/op
+PASS
+ok  	sunbook/internal/ui	16.208s
+goos: darwin
+goarch: arm64
+pkg: sunbook/internal/editor
+cpu: Apple M4
+BenchmarkDiskChecks-10    	     680	   1664723 ns/op	 4331913 B/op	      80 allocs/op
+BenchmarkDiskChecks-10    	     729	   1795575 ns/op	 4331905 B/op	      80 allocs/op
+BenchmarkDiskChecks-10    	     633	   1845977 ns/op	 4331907 B/op	      80 allocs/op
+BenchmarkDiskChecks-10    	     664	   1742899 ns/op	 4331906 B/op	      80 allocs/op
+BenchmarkDiskChecks-10    	     645	   1801032 ns/op	 4331907 B/op	      80 allocs/op
+PASS
+ok  	sunbook/internal/editor	7.345s
+
+# Materialized snapshot: pre-optimization buffer via Go overlay, same test harness
+goos: darwin
+goarch: arm64
+pkg: sunbook/internal/text
+cpu: Apple M4
+BenchmarkEditMaterializedSnapshot-10    	     261	   4356551 ns/op	17476672 B/op	      72 allocs/op
+BenchmarkEditMaterializedSnapshot-10    	     272	   4429682 ns/op	17476673 B/op	      72 allocs/op
+BenchmarkEditMaterializedSnapshot-10    	     273	   4377030 ns/op	17476674 B/op	      72 allocs/op
+BenchmarkEditMaterializedSnapshot-10    	     276	   4421607 ns/op	17476673 B/op	      72 allocs/op
+BenchmarkEditMaterializedSnapshot-10    	     270	   4366534 ns/op	17476674 B/op	      72 allocs/op
+PASS
+ok  	sunbook/internal/text	8.384s

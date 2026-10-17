@@ -23,9 +23,12 @@ func (a *App) newTerminal() {
 	a.termSeq++
 	tab := &terminalTab{id: a.termSeq}
 	s, err := terminal.Start(a.cfg.Shell, a.root, max(1, r.W), max(1, r.H), func(data []byte) {
-		a.post(func() {
+		a.postQuiet(func() {
 			if !tab.closed {
 				tab.session.Feed(data)
+				if a.panelVisible && a.panel == "Terminal" && a.terminalActive == tab {
+					a.invalidate()
+				}
 			}
 		})
 	}, func(err error) {

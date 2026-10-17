@@ -200,6 +200,7 @@ func (a *App) chooseTheme() {
 }
 
 func (a *App) applyTheme(theme config.Theme) {
+	a.invalidate()
 	a.cfg.Theme = theme
 	a.themeSeq++
 	a.initTheme()

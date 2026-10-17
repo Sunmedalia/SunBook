@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gdamore/tcell/v3"
 	"sunbook/internal/config"
+	"sunbook/internal/plugin"
 	"sunbook/internal/terminal"
 	"sunbook/internal/ui"
 )
@@ -21,6 +24,7 @@ func main() {
 }
 func run() error {
 	path := flag.String("config", config.Path(), "configuration file")
+	checkPlugin := flag.String("check-plugin", "", "validate a local plugin handshake and health response")
 	doctor := flag.Bool("doctor", false, "check optional external dependencies")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Usage = func() { fmt.Fprintln(os.Stderr, "Usage: sunbook [options] [file|directory]"); flag.PrintDefaults() }
@@ -31,6 +35,17 @@ func run() error {
 	}
 	if flag.NArg() > 1 {
 		return fmt.Errorf("expected at most one file or directory")
+	}
+	if *checkPlugin != "" {
+		dir, err := filepath.Abs(*checkPlugin)
+		if err != nil {
+			return err
+		}
+		if err = plugin.Check(context.Background(), dir); err != nil {
+			return err
+		}
+		fmt.Println("Plugin API v1 handshake and health check passed")
+		return nil
 	}
 	cfg, err := config.Load(*path)
 	if err != nil {

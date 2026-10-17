@@ -19,48 +19,73 @@ import (
 	"sunbook/internal/text"
 )
 
+// readTree checks cancellation and the limit for every entry, including flat directories.
+func readTree(ctx context.Context, root string, expanded map[string]bool, limit int) ([]treeEntry, bool) {
+	var entries []treeEntry
+	truncated := false
+	var walk func(string, int)
+	walk = func(dir string, depth int) {
+		if ctx.Err() != nil || truncated || depth > 30 {
+			return
+		}
+		files, err := os.ReadDir(dir)
+		if err != nil || ctx.Err() != nil {
+			return
+		}
+		sort.SliceStable(files, func(i, j int) bool {
+			if files[i].IsDir() != files[j].IsDir() {
+				return files[i].IsDir()
+			}
+			return strings.ToLower(files[i].Name()) < strings.ToLower(files[j].Name())
+		})
+		for _, f := range files {
+			if ctx.Err() != nil || truncated {
+				return
+			}
+			if f.Name() == ".git" {
+				continue
+			}
+			if len(entries) >= limit {
+				truncated = true
+				return
+			}
+			path := filepath.Join(dir, f.Name())
+			entries = append(entries, treeEntry{path, f.Name(), depth, f.IsDir()})
+			if f.IsDir() && expanded[path] {
+				walk(path, depth+1)
+			}
+		}
+	}
+	walk(root, 0)
+	return entries, truncated
+}
 func (a *App) scanTree() {
 	a.invalidateTreeIndex()
+	if a.treeCancel != nil {
+		a.treeCancel()
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.treeCancel = cancel
 	a.treeSeq++
-	seq := a.treeSeq
-	root := a.root
+	seq, root := a.treeSeq, a.root
 	expanded := map[string]bool{}
 	for p, v := range a.expanded {
 		expanded[p] = v
 	}
 	go func() {
-		var entries []treeEntry
-		var walk func(string, int)
-		walk = func(dir string, depth int) {
-			if len(entries) > 10000 || depth > 30 {
-				return
-			}
-			files, e := os.ReadDir(dir)
-			if e != nil {
-				return
-			}
-			sort.SliceStable(files, func(i, j int) bool {
-				if files[i].IsDir() != files[j].IsDir() {
-					return files[i].IsDir()
-				}
-				return strings.ToLower(files[i].Name()) < strings.ToLower(files[j].Name())
-			})
-			for _, f := range files {
-				if f.Name() == ".git" {
-					continue
-				}
-				path := filepath.Join(dir, f.Name())
-				entries = append(entries, treeEntry{path, f.Name(), depth, f.IsDir()})
-				if f.IsDir() && expanded[path] {
-					walk(path, depth+1)
-				}
-			}
+		defer cancel()
+		entries, truncated := readTree(ctx, root, expanded, 10000)
+		if ctx.Err() != nil {
+			return
 		}
-		walk(root, 0)
 		a.post(func() {
-			if seq == a.treeSeq {
-				a.treeAll = entries
-				a.applyTreeFilter()
+			if seq != a.treeSeq || root != a.root {
+				return
+			}
+			a.treeAll = entries
+			a.applyTreeFilter()
+			if truncated {
+				a.notify("Explorer limited to 10000 entries; use Quick Open to find other files")
 			}
 		})
 	}()
@@ -252,7 +277,7 @@ func (a *App) request(method, capability string, extra map[string]any, done func
 		params[k] = v
 	}
 	version := d.Buffer.Version
-	c.Request(method, params, func(raw json.RawMessage, err error) {
+	c.Request(a.ctx, method, params, func(raw json.RawMessage, err error) {
 		a.post(func() {
 			if err != nil {
 				a.showError(err)
@@ -293,7 +318,10 @@ func (a *App) requestCompletion(manual bool) {
 		}
 	}
 	version := d.Buffer.Version
-	c.Request("textDocument/completion", map[string]any{"textDocument": map[string]string{"uri": lsp.URI(d.Path)}, "position": lsp.At(d.Buffer, head), "context": map[string]int{"triggerKind": 1}}, func(raw json.RawMessage, err error) {
+	a.cancelCompletion()
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.completionCancel = cancel
+	c.Request(ctx, "textDocument/completion", map[string]any{"textDocument": map[string]string{"uri": lsp.URI(d.Path)}, "position": lsp.At(d.Buffer, head), "context": map[string]int{"triggerKind": 1}}, func(raw json.RawMessage, err error) {
 		a.post(func() {
 			if err != nil {
 				if manual {
@@ -627,4 +655,11 @@ func (a *App) previewWorkspaceEdit(ws lsp.WorkspaceEdit) {
 		a.notify("Rename applied. Use Save All to write changes.")
 	}}, {Label: "Cancel"}})
 	a.modal.Body = body
+}
+
+func (a *App) cancelCompletion() {
+	if a.completionCancel != nil {
+		a.completionCancel()
+		a.completionCancel = nil
+	}
 }

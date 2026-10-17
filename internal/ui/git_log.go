@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -27,13 +28,22 @@ func (a *App) refreshGitLog() {
 		if hasCommits {
 			revisions, err = gitservice.Log(ctx, root, path)
 		}
-		a.post(func() {
+		a.postQuiet(func() {
 			if seq != a.gitLogSeq || workspace != a.root {
 				return
 			}
 			a.gitLogReading = false
+			nextError := ""
+			if err != nil {
+				nextError = err.Error()
+			}
+			unchanged := a.gitLogLoaded && a.gitLogError == nextError && (err != nil || reflect.DeepEqual(a.gitLog, revisions))
 			a.gitLogRefreshed = time.Now()
 			a.gitLogLoaded = true
+			if unchanged {
+				return
+			}
+			a.invalidate()
 			if err != nil {
 				a.gitLogError = err.Error()
 				return

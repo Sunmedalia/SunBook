@@ -137,8 +137,17 @@ func (a *App) drawGitSidebar() {
 	}
 	suffix = fitLabel(suffix, r.W-2)
 	branchStyle := a.sidebarBand(r.Y + 1)
-	a.put(r.X+1, r.Y+1, 2, "↳", branchStyle.Foreground(a.colors.folder))
-	a.put(r.X+3, r.Y+1, r.W-4, fitLabel(branch, r.W-4-text.Width(suffix, 4)), branchStyle.Bold(true))
+	if a.git.Root != "" {
+		if a.hoverCommand == "git.branches" {
+			branchStyle = branchStyle.Background(a.colors.hover)
+		}
+		a.buttons = append(a.buttons, button{rect: rect{r.X, r.Y + 1, r.W, 1}, Command: "git.branches", Hint: "Manage branches: switch, create, rename, merge and delete (b)", Disabled: a.gitBusy})
+	}
+	a.put(r.X+1, r.Y+1, 2, a.actionIcon("git.branches", "Branches"), branchStyle.Foreground(a.colors.folder))
+	a.put(r.X+3, r.Y+1, r.W-4, fitLabel(branch, max(0, r.W-6-text.Width(suffix, 4))), branchStyle.Bold(true))
+	if a.git.Root != "" {
+		a.put(r.X+r.W-3-text.Width(suffix, 4), r.Y+1, 1, "▾", branchStyle.Foreground(a.colors.muted))
+	}
 	a.put(r.X+r.W-1-text.Width(suffix, 4), r.Y+1, text.Width(suffix, 4), suffix, branchStyle.Foreground(a.colors.folder))
 	a.gitListY = a.gitBodyStart()
 	a.layoutGitSections()

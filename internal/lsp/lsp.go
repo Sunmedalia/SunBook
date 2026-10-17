@@ -1,5 +1,5 @@
 // Package lsp is a stdio LSP client. The UI never blocks on a server request;
-// each client serializes notifications and requests on its own work queue.
+// each client sends ordered messages and waits for request responses concurrently.
 package lsp
 
 import (
@@ -116,17 +116,24 @@ func (t *transport) Close() error {
 	return nil
 }
 
+var ErrBusy = errors.New("language server queue is busy")
+
 type job struct {
-	method   string
-	params   any
-	callback func(json.RawMessage, error)
+	ctx        context.Context
+	changePath string
+	method     string
+	params     any
+	callback   func(json.RawMessage, error)
 }
 type Client struct {
 	conn          *jsonrpc2.Conn
 	cmd           *exec.Cmd
 	ctx           context.Context
 	cancel        context.CancelFunc
-	jobs          chan job
+	queueMu       sync.Mutex
+	jobs          []job
+	wake          chan struct{}
+	active        chan struct{}
 	requestID     uint64
 	done          chan struct{}
 	root          string
@@ -135,11 +142,13 @@ type Client struct {
 	onDiagnostics func(Diagnostics)
 	onMessage     func(string)
 	once          sync.Once
+	failure       sync.Once
+	writeTimeout  time.Duration
 }
 
 func Start(parent context.Context, root string, s config.Server, onDiagnostics func(Diagnostics), onMessage func(string)) (*Client, error) {
 	ctx, cancel := context.WithCancel(parent)
-	c := &Client{ctx: ctx, cancel: cancel, root: root, settings: s.Settings, jobs: make(chan job, 1024), done: make(chan struct{}), onDiagnostics: onDiagnostics, onMessage: onMessage}
+	c := &Client{ctx: ctx, cancel: cancel, root: root, settings: s.Settings, wake: make(chan struct{}, 1), active: make(chan struct{}, 8), done: make(chan struct{}), onDiagnostics: onDiagnostics, onMessage: onMessage}
 	cmd := exec.CommandContext(ctx, s.Command, s.Args...)
 	cmd.Dir = root
 	c.cmd = cmd
@@ -164,11 +173,13 @@ func Start(parent context.Context, root string, s config.Server, onDiagnostics f
 	c.conn = jsonrpc2.NewConn(ctx, jsonrpc2.NewBufferedStream(&transport{ReadCloser: out, writer: in}, jsonrpc2.VSCodeObjectCodec{}), jsonrpc2.AsyncHandler(c))
 	go func() {
 		err := cmd.Wait()
+		unexpected := ctx.Err() == nil
+		cancel()
 		close(c.done)
-		if ctx.Err() == nil {
+		_ = c.conn.Close()
+		if unexpected {
 			onMessage(fmt.Sprintf("%s exited: %v", s.Command, err))
 		}
-		_ = c.conn.Close()
 	}()
 	initCtx, initCancel := context.WithTimeout(ctx, 15*time.Second)
 	defer initCancel()
@@ -206,70 +217,182 @@ func (c *Client) Supports(key string) bool {
 	raw := c.Capabilities[key]
 	return len(raw) > 0 && string(raw) != "false" && string(raw) != "null"
 }
+
+// enqueue never waits on server IO. Only adjacent full-document changes may
+// replace one another: requests, saves and closes are ordering barriers.
+func (c *Client) enqueue(j job) bool {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	if c.ctx.Err() != nil {
+		return false
+	}
+	n := len(c.jobs)
+	if j.changePath != "" && n > 0 && c.jobs[n-1].changePath == j.changePath {
+		c.jobs[n-1] = j
+	} else {
+		if n >= 1024 {
+			return false
+		}
+		c.jobs = append(c.jobs, j)
+	}
+	select {
+	case c.wake <- struct{}{}:
+	default:
+	}
+	return true
+}
+func (c *Client) nextJob() (job, bool) {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	if len(c.jobs) == 0 {
+		return job{}, false
+	}
+	j := c.jobs[0]
+	c.jobs[0] = job{}
+	c.jobs = c.jobs[1:]
+	return j, true
+}
+func (c *Client) fail(message string) {
+	c.failure.Do(func() {
+		c.cancel()
+		if c.conn != nil {
+			_ = c.conn.Close()
+		}
+		if c.onMessage != nil {
+			go c.onMessage(message + "; use Restart Language Servers")
+		}
+	})
+}
+
+// Context cancellation alone cannot interrupt a blocked stdio Write. Closing
+// the transport prevents a non-reading server from retaining the dispatcher.
+func (c *Client) guardWrite(ctx context.Context) func() bool {
+	return context.AfterFunc(ctx, func() {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) && c.ctx.Err() == nil {
+			c.fail("Language server transport stalled")
+		}
+	})
+}
+func (c *Client) writeContext() (context.Context, context.CancelFunc) {
+	timeout := c.writeTimeout
+	if timeout <= 0 {
+		timeout = 8 * time.Second
+	}
+	return context.WithTimeout(c.ctx, timeout)
+}
 func (c *Client) loop() {
+	defer func() {
+		c.queueMu.Lock()
+		clear(c.jobs)
+		c.jobs = nil
+		c.queueMu.Unlock()
+	}()
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
-		case j := <-c.jobs:
-			ctx, cancel := context.WithTimeout(c.ctx, 8*time.Second)
-			if j.callback == nil {
-				if e := c.conn.Notify(ctx, j.method, j.params); e != nil && c.ctx.Err() == nil {
-					c.onMessage(e.Error())
-				}
-			} else {
-				var result json.RawMessage
-				c.requestID++
-				id := fmt.Sprintf("sunbook-%d", c.requestID)
-				err := c.conn.Call(ctx, j.method, j.params, &result, jsonrpc2.PickID(jsonrpc2.ID{Str: id, IsString: true}))
-				if ctx.Err() != nil && c.ctx.Err() == nil {
-					cancelCtx, stop := context.WithTimeout(c.ctx, time.Second)
-					_ = c.conn.Notify(cancelCtx, "$/cancelRequest", map[string]string{"id": id})
-					stop()
-				}
-				j.callback(result, err)
+		case <-c.wake:
+		}
+		for {
+			if c.ctx.Err() != nil {
+				return
 			}
-			cancel()
+			j, ok := c.nextJob()
+			if !ok {
+				break
+			}
+			if j.callback == nil {
+				ctx, cancel := c.writeContext()
+				stop := c.guardWrite(ctx)
+				err := c.conn.Notify(ctx, j.method, j.params)
+				stop()
+				cancel()
+				if err != nil && c.ctx.Err() == nil {
+					c.fail(err.Error())
+				}
+				continue
+			}
+			if j.ctx.Err() != nil {
+				j.callback(nil, j.ctx.Err())
+				continue
+			}
+			select {
+			case c.active <- struct{}{}:
+			default:
+				j.callback(nil, ErrBusy)
+				continue
+			}
+			c.requestID++
+			id := fmt.Sprintf("sunbook-%d", c.requestID)
+			// User cancellation completes the callback immediately, but must not
+			// close a healthy transport while a message is being written.
+			writeCtx, finishWrite := c.writeContext()
+			stop := c.guardWrite(writeCtx)
+			waiter, err := c.conn.DispatchCall(writeCtx, j.method, j.params, jsonrpc2.PickID(jsonrpc2.ID{Str: id, IsString: true}))
+			stop()
+			finishWrite()
+			if err != nil {
+				<-c.active
+				j.callback(nil, err)
+				continue
+			}
+			go func() {
+				defer func() { <-c.active }()
+				var raw json.RawMessage
+				err := waiter.Wait(j.ctx, &raw)
+				if j.ctx.Err() != nil && c.ctx.Err() == nil {
+					c.Notify("$/cancelRequest", map[string]string{"id": id})
+				}
+				j.callback(raw, err)
+			}()
 		}
 	}
 }
 func (c *Client) Done() <-chan struct{} { return c.done }
 func (c *Client) Notify(method string, p any) {
-	select {
-	case c.jobs <- job{method: method, params: p}:
-	case <-c.ctx.Done():
+	if !c.enqueue(job{method: method, params: p}) && c.ctx.Err() == nil {
+		c.fail("Language server notification queue overflow")
 	}
 }
-func (c *Client) Request(method string, p any, cb func(json.RawMessage, error)) {
-	// A request cancelled while still queued must complete its callback too.
+func (c *Client) Request(parent context.Context, method string, p any, cb func(json.RawMessage, error)) {
+	ctx, cancel := context.WithTimeout(parent, 8*time.Second)
+	stopClient := context.AfterFunc(c.ctx, cancel)
 	var once sync.Once
 	done := make(chan struct{})
-	wrapped := func(raw json.RawMessage, e error) { once.Do(func() { close(done); cb(raw, e) }) }
+	wrapped := func(raw json.RawMessage, err error) {
+		once.Do(func() { close(done); stopClient(); cancel(); cb(raw, err) })
+	}
 	go func() {
 		select {
-		case <-c.ctx.Done():
-			wrapped(nil, c.ctx.Err())
+		case <-ctx.Done():
+			wrapped(nil, ctx.Err())
 		case <-done:
 		}
 	}()
-	select {
-	case c.jobs <- job{method, p, wrapped}:
-	case <-c.ctx.Done():
-		wrapped(nil, c.ctx.Err())
+	if !c.enqueue(job{ctx: ctx, method: method, params: p, callback: wrapped}) {
+		err := error(ErrBusy)
+		if c.ctx.Err() != nil {
+			err = c.ctx.Err()
+		}
+		go wrapped(nil, err)
 	}
 }
 func (c *Client) Open(path, lang, contents string, version int) {
 	c.Notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": URI(path), "languageId": lang, "version": version, "text": contents}})
 }
 func (c *Client) Change(path, contents string, version int) {
-	c.Notify("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": URI(path), "version": version}, "contentChanges": []map[string]string{{"text": contents}}})
+	if !c.enqueue(job{method: "textDocument/didChange", changePath: path, params: map[string]any{"textDocument": map[string]any{"uri": URI(path), "version": version}, "contentChanges": []map[string]string{{"text": contents}}}}) && c.ctx.Err() == nil {
+		c.fail("Language server change queue overflow")
+	}
 }
 func (c *Client) Close() {
 	c.once.Do(func() {
 		if c.conn != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			stop := context.AfterFunc(ctx, func() { _ = c.conn.Close() })
 			_ = c.conn.Call(ctx, "shutdown", nil, nil)
 			_ = c.conn.Notify(ctx, "exit", nil)
+			stop()
 			cancel()
 		}
 		c.cancel()

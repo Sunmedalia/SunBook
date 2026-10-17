@@ -78,6 +78,7 @@ func keyName(e *tcell.EventKey) string {
 	return prefix + name
 }
 func (a *App) key(e *tcell.EventKey) {
+	a.cancelCompletion()
 	a.scrollDrag = nil
 	a.fileClick = fileClick{}
 	name := keyName(e)
@@ -187,6 +188,10 @@ func (a *App) key(e *tcell.EventKey) {
 			return
 		}
 	}
+	if a.focus == "plugins" {
+		a.pluginKey(e, name)
+		return
+	}
 	if a.focus == "tree" {
 		switch name {
 		case "up":
@@ -262,6 +267,8 @@ func (a *App) key(e *tcell.EventKey) {
 		case "tab":
 			a.focus = "gitLog"
 			a.moveGitLog(0)
+		case "b":
+			a.branchManager()
 		case "m":
 			a.gitMore()
 		case "escape":
@@ -491,6 +498,8 @@ func terminalKey(e *tcell.EventKey) uv.Key {
 }
 
 func (a *App) setModal(m *modal) {
+	a.invalidate()
+	a.cancelCompletion()
 	a.terminalMenu = nil
 	a.scrollDrag = nil
 	a.tabDrag = nil
@@ -640,7 +649,7 @@ func (a *App) modalKey(e *tcell.EventKey, name string) {
 		m.BodyTop = max(0, m.BodyTop-1)
 		return
 	case "ctrl+down":
-		m.BodyTop = min(max(0, len(m.Body)-5), m.BodyTop+1)
+		m.BodyTop = min(max(0, len(m.Body)-max(1, m.BodyH)), m.BodyTop+1)
 		return
 	case "escape":
 		a.modal = nil
@@ -720,6 +729,7 @@ func (a *App) modalKey(e *tcell.EventKey, name string) {
 }
 
 func (a *App) mouse(e *tcell.EventMouse) {
+	a.cancelCompletion()
 	x, y := e.Position()
 	buttons := e.Buttons()
 	previous := a.lastButtons
@@ -768,7 +778,7 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		}
 		if wheel != 0 {
 			if len(m.Body) > 0 && len(m.Items) > 0 {
-				m.BodyTop = max(0, min(max(0, len(m.Body)-5), m.BodyTop+wheel))
+				m.BodyTop = max(0, min(max(0, len(m.Body)-max(1, m.BodyH)), m.BodyTop+wheel))
 			} else if len(m.Visible) > 0 {
 				m.Selected = max(0, min(m.Selected+wheel, len(m.Visible)-1))
 			} else {

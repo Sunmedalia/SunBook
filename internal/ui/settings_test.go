@@ -23,6 +23,7 @@ func TestSettingsSwitchIconsPersistsAndPreservesEditorState(t *testing.T) {
 	if a.modal == nil || a.modal.Title != "Settings" {
 		t.Fatal("activity gear did not open Settings")
 	}
+	a.modal.Selected = 1
 	a.modalAccept()
 	if a.modal == nil || a.modal.Title != "File Icon Theme" {
 		t.Fatal("Settings did not open file icons")
@@ -40,7 +41,7 @@ func TestSettingsSwitchIconsPersistsAndPreservesEditorState(t *testing.T) {
 		t.Fatal("Classic no longer contains the original Python icon", mark)
 	}
 	clickCommand(t, a, "app.settings")
-	a.modal.Selected = 1
+	a.modal.Selected = 2
 	a.modalAccept()
 	a.key(tcell.NewEventKey(tcell.KeyDown, "", 0))
 	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
@@ -62,6 +63,43 @@ func TestSettingsSwitchIconsPersistsAndPreservesEditorState(t *testing.T) {
 	a.key(tcell.NewEventKey(tcell.KeyEsc, "", 0))
 	if a.cfg.FileIcons != "expressive" {
 		t.Fatal("cancelling icon picker applied an unconfirmed selection")
+	}
+}
+
+func TestSettingsThemeEntryShowsCurrentThemeAndPersistsSelection(t *testing.T) {
+	a, _ := testApp(t)
+	a.cfg.FilePath = filepath.Join(t.TempDir(), "config.json")
+	a.typeInput("keep my draft")
+	doc := a.view().Doc
+	clickCommand(t, a, "app.settings")
+	if a.modal.Visible[0].Label != "Theme…" || a.modal.Visible[0].Detail != "SunBook" {
+		t.Fatal("Settings must expose the current theme as its first entry", a.modal.Visible)
+	}
+	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
+	if a.modal == nil || a.modal.Title != "Color Theme" {
+		t.Fatal("Theme in Settings did not open the theme picker")
+	}
+	a.paste("GitHub Light")
+	a.modalAccept()
+	cfg, err := config.Load(a.cfg.FilePath)
+	if err != nil || cfg.Theme.Name != "github-light" || a.view().Doc != doc || doc.Buffer.String() != "keep my draft" {
+		t.Fatal("Settings did not save the chosen theme or changed the document", err)
+	}
+	clickCommand(t, a, "app.settings")
+	if a.modal.Visible[0].Detail != "GitHub Light" {
+		t.Fatal("Settings did not refresh the current theme name")
+	}
+	a.modalAccept()
+	for _, name := range []string{"Auto", "Terminal Default"} {
+		found := false
+		for _, choice := range a.modal.Visible {
+			if strings.HasPrefix(choice.Label, name) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("Settings theme picker is missing a terminal theme", name)
+		}
 	}
 }
 
