@@ -53,7 +53,9 @@ func (a *App) refreshGitLog() {
 				selected = a.gitLog[a.gitLogSelected].Hash
 			}
 			oldRows := a.gitLogRows()
-			if a.gitLogTop >= 0 && a.gitLogTop < len(oldRows) {
+			// Follow new commits when already at the top. Preserve the anchor only
+			// when the user has deliberately scrolled into older history.
+			if a.gitLogTop > 0 && a.gitLogTop < len(oldRows) {
 				topKey = a.gitLogRowKey(oldRows[a.gitLogTop])
 			}
 			firstLoad := len(a.gitLog) == 0

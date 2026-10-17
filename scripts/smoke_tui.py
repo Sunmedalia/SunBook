@@ -32,6 +32,9 @@ def main():
         history = Path(workspace) / "history.go"
         history.write_text('package history\nvar value = "committed"\n', encoding="utf-8")
         subprocess.run(["git", "init", "-q", workspace], check=True, capture_output=True)
+        for key, value in [("user.name", "SunBook Test"), ("user.email", "test@example.invalid"),
+                           ("commit.gpgsign", "false"), ("core.hooksPath", "/dev/null")]:
+            subprocess.run(["git", "-C", workspace, "config", key, value], check=True, capture_output=True)
         subprocess.run(["git", "-C", workspace, "add", "--", "history.go"], check=True, capture_output=True)
         subprocess.run(["git", "-C", workspace, "-c", "user.name=SunBook Test",
                         "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
@@ -229,6 +232,24 @@ def main():
             wait_for(lambda: has_text(b"EMPTY") and has_text(b"committed"),
                      "Git log file opens committed snapshots")
             os.write(master, b"\x17")  # Ctrl+W closes the historic comparison
+            # Commit through the real composer. Its new hash must be the first
+            # visible log row, even though an older commit/file was selected.
+            click(12, 4)
+            paste("SMOKE NEW HEAD")
+            os.write(master, b"\r")
+            wait_for(lambda: subprocess.run(["git", "-C", workspace, "log", "-1", "--format=%s"],
+                                            capture_output=True, text=True).stdout.strip() == "SMOKE NEW HEAD",
+                     "commit from the message composer")
+            new_head = subprocess.check_output(["git", "-C", workspace, "rev-parse", "--short=7", "HEAD"], text=True).strip()
+
+            def newest_commit_visible():
+                lines = screen.text.splitlines()
+                for i, line in enumerate(lines[:-1]):
+                    if "GIT LOG" in line[5:31]:
+                        return new_head in lines[i + 1][5:31]
+                return False
+
+            wait_for(newest_commit_visible, "successful commit appears at the top of the log")
             click(3, 3)  # activity E restores Explorer
             clear_output()
             click(3, 6)  # activity S restores query and results
@@ -463,7 +484,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, collapsible Git groups, multiline commit composer, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, Settings/Classic/Expressive icon persistence, branch creation/switching, plugin install/permission review/commands/disable/remove/quarantine recovery, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, collapsible Git groups, multiline commit composer, commit/log auto-reveal, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, Settings/Classic/Expressive icon persistence, branch creation/switching, plugin install/permission review/commands/disable/remove/quarantine recovery, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
         finally:
             # Closing the PTY master first also releases a macOS child that is
             # exiting while its tty output is blocked after a failed assertion.

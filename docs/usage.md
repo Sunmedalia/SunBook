@@ -264,13 +264,13 @@ log and change list; the size is remembered while switching sidebars. The header
 arrow expands the log and restores the chosen size. **More →
 Selected file history** restricts the log to that file (following renames);
 **Log** returns to repository history. Background refresh keeps the selected
-commit and scroll position without progress messages or flickering buttons.
+commit and scroll position without progress messages or flickering buttons. When already at the top, the log follows new commits; scrolling into older history keeps that view anchored.
 
 `s` stages a file; `u` unstages it; `o` opens it. Group-header `+` stages the
 entire group; `−` unstages all staged files. **More** also provides repository-wide
 stage/unstage and repository details. `S` / `U` stage / unstage all changes.
 
-Press `c` or click the message field to write a commit message. The composer wraps long lines and shows three lines when space permits. Paste a subject and description, or use Ctrl+J (Shift+Enter on supported terminals) to insert a newline. Enter or **Commit · N** commits the staged files; `N` is the staged file count. The button is disabled while Git is busy, when nothing is staged, or when conflicts remain. Drafts survive sidebar switches and failed commits; successful commits clear the submitted draft unless you have started editing another message. Small terminals show one line while retaining the complete draft. Conflicts block commits
+Press `c` or click the message field to write a commit message. The composer wraps long lines and shows three lines when space permits. Paste a subject and description, or use Ctrl+J (Shift+Enter on supported terminals) to insert a newline. Enter or **Commit · N** commits the staged files; `N` is the staged file count. The button is disabled while Git is busy, when nothing is staged, or when conflicts remain. Drafts survive sidebar switches and failed commits; successful commits clear the submitted draft unless you have started editing another message. After a successful commit, the log returns to repository history and reveals the new commit at the top. Small terminals show one line while retaining the complete draft. Conflicts block commits
 until resolved and staged. Git operates on saved files on disk. `/` or Ctrl+F
 filters changed paths; Esc in the filter clears it. Small terminals provide the
 filter in a prompt. Filtering does not change the scope of commits or group/batch

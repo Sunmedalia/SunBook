@@ -269,6 +269,14 @@ func (a *App) commit() {
 			a.gitMessageCursor = 0
 			a.gitMessageTop = 0
 		}
+		// The status refresh after this callback loads the new HEAD. Reveal it
+		// in repository history and supersede any older/file-specific request.
+		a.gitLogSeq++
+		a.gitLogReading = false
+		a.gitLogPath = ""
+		a.gitLogSelected = -1
+		a.gitLogNode = ""
+		a.gitLogTop = 0
 	})
 }
 func (a *App) gitMore() {
