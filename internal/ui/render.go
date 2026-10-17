@@ -88,7 +88,12 @@ func (a *App) layout() {
 		a.rects[0].W = left
 		a.rects[1] = rect{start + left + 1, 3, width - left - 1, height}
 	}
-	if a.rects[1].W == 0 {
+	if p := a.pluginPreview(); p != nil {
+		left := max(1, min(width-2, int(float64(width)*a.splitRatio)))
+		a.rects = [2]rect{}
+		a.rects[a.active] = rect{start, 3, left, height}
+		p.Rect = rect{start + left + 1, 4, max(0, width-left-1), max(0, height-1)}
+	} else if a.rects[1].W == 0 {
 		a.active = 0
 	}
 	if sidebarFocus(a.focus) && side == 0 {
@@ -139,11 +144,13 @@ func (a *App) draw() {
 			a.put(a.sideRect.X+a.sideRect.W, y, 1, "│", a.base.Foreground(a.colors.border))
 		}
 	}
-	start := a.rects[0].X
+	start := a.editorArea.X
 	a.fill(rect{start, 1, a.editorArea.W, 1}, a.chrome)
 	a.drawTabs(start, a.editorArea.W)
 	if a.comparing() {
 		a.drawComparison()
+	} else if a.pluginPreview() != nil {
+		a.drawPluginSplit()
 	} else {
 		path := a.view().Doc.Path
 		if path == "" {
@@ -178,14 +185,18 @@ func (a *App) draw() {
 	case "plugins":
 		hint = "Enter Actions · i Install plugin · r Refresh · Esc Editor"
 	case "git":
-		hint = "Enter Diff · s Stage · u Unstage · b Branches · c Message · / Filter · m More · h History"
+		hint = "Enter Diff/Fold · ←/→ Fold · s Stage · u Unstage · c Message · b Branches · / Filter"
 	case "gitMessage":
-		hint = "Enter Commit staged · Tab Filter · Ctrl+U Clear · Esc File list"
+		hint = "Enter Commit staged · Ctrl+J New line · Tab Filter · Ctrl+U Clear · Esc File list"
 	case "gitFilter":
 		hint = "Type to filter changes · Enter File list · Esc Clear filter"
 	}
 	if a.comparing() && (a.focus == "diff" || a.focus == "editor") {
 		hint = "Read-only diff · ↑/↓ Scroll · Tab Other side · n/p Change · o Open file · Esc Close"
+
+	}
+	if a.focus == "markdown" {
+		hint = "Live preview · a Format · v Source/Read · Tab Editor · Esc Close"
 	}
 	if a.focus == "gitLog" {
 		hint = "Git log · ↑/↓ Select · Enter Commit · Tab Changes · Esc Editor"

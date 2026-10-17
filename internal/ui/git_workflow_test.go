@@ -42,8 +42,8 @@ func TestGitInlineCommitPreservesDraftOnFailureAndCommitsOnlyStaged(t *testing.T
 	waitUpdates(t, a, func() bool { return !a.gitReading })
 	a.draw()
 	click(a, a.gitMessageRect.X+1, a.gitMessageRect.Y)
-	a.paste("fix 中👩‍💻\nmessage")
-	expected := "fix 中👩‍💻 message"
+	a.paste("fix 中👩‍💻\r\n\r\nmessage")
+	expected := "fix 中👩‍💻\n\nmessage"
 	if a.gitMessage != expected || a.view().Doc.Buffer.String() != "" {
 		t.Fatal("message paste went to editor", a.gitMessage)
 	}
@@ -55,7 +55,7 @@ func TestGitInlineCommitPreservesDraftOnFailureAndCommitsOnlyStaged(t *testing.T
 	os.Remove(hook)
 	a.key(tcell.NewEventKey(tcell.KeyEnter, "", 0))
 	waitUpdates(t, a, func() bool { return !a.gitBusy && !a.gitReading })
-	message, err := gitservice.Run(ctx, a.root, "log", "-1", "--format=%s")
+	message, err := gitservice.Run(ctx, a.root, "log", "-1", "--format=%B")
 	if err != nil || strings.TrimSpace(message) != expected || a.gitMessage != "" || a.gitActionError != "" {
 		t.Fatal("successful inline commit", message, err, a.gitMessage, a.gitActionError)
 	}
@@ -113,12 +113,14 @@ func TestGitGroupButtonsAndBatchUnstage(t *testing.T) {
 	os.WriteFile(filepath.Join(a.root, "fresh.txt"), []byte("fresh\n"), 0644)
 	a.showSidebar("Git")
 	waitUpdates(t, a, func() bool { return !a.gitReading })
+	clickCommand(t, a, "git.toggleCHANGES")
 	clickCommand(t, a, "git.stageCHANGES")
 	waitUpdates(t, a, func() bool { return !a.gitBusy && !a.gitReading })
 	staged, changed, _ := a.gitCounts()
 	if staged != 1 || changed != 1 {
 		t.Fatal("tracked group staged untracked files", a.git.Files)
 	}
+	clickCommand(t, a, "git.toggleUNTRACKED")
 	clickCommand(t, a, "git.stageUNTRACKED")
 	waitUpdates(t, a, func() bool { return !a.gitBusy && !a.gitReading })
 	staged, changed, _ = a.gitCounts()
@@ -130,6 +132,9 @@ func TestGitGroupButtonsAndBatchUnstage(t *testing.T) {
 	staged, changed, _ = a.gitCounts()
 	if staged != 0 || changed != 2 {
 		t.Fatal("batch unstage changed working files", a.git.Files)
+	}
+	if !a.gitCollapsed["CHANGES"] || !a.gitCollapsed["UNTRACKED"] {
+		t.Fatal("Git status refresh lost collapsed groups")
 	}
 	if data, _ := os.ReadFile(filepath.Join(a.root, "tracked.txt")); string(data) != "changed\n" {
 		t.Fatal("unstage changed content")

@@ -38,11 +38,32 @@ type Edit struct {
 	Text  string `json:"text"`
 }
 type Result struct {
-	Title   string `json:"title,omitempty"`
-	Message string `json:"message,omitempty"`
-	Body    string `json:"body,omitempty"`
-	Edits   []Edit `json:"edits,omitempty"`
+	Title   string   `json:"title,omitempty"`
+	Message string   `json:"message,omitempty"`
+	Body    string   `json:"body,omitempty"`
+	Edits   []Edit   `json:"edits,omitempty"`
+	Preview *Preview `json:"preview,omitempty"`
 }
+type Preview struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+func (p *Preview) UnmarshalJSON(raw []byte) error {
+	var fields struct {
+		Kind *string `json:"kind"`
+		Text *string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	if fields.Kind == nil || fields.Text == nil {
+		return errors.New("preview requires kind and text")
+	}
+	p.Kind, p.Text = *fields.Kind, *fields.Text
+	return nil
+}
+
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`

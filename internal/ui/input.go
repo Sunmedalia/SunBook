@@ -100,6 +100,10 @@ func (a *App) key(e *tcell.EventKey) {
 			return
 		}
 	}
+	if a.focus == "gitMessage" && name == "ctrl+j" {
+		a.gitInputKey(e, name)
+		return
+	}
 	if id := a.bindings[name]; id == "view.panel" || id == "view.hidePanel" || id == "view.sidebar" || id == "view.explorer" || id == "view.git" || id == "search.workspace" {
 		a.execute(id)
 		return
@@ -133,6 +137,10 @@ func (a *App) key(e *tcell.EventKey) {
 	}
 	if a.focus == "gitLog" {
 		a.gitLogKey(e, name)
+		return
+	}
+	if a.focus == "markdown" {
+		a.pluginSplitKey(e, name)
 		return
 	}
 	if a.comparing() && (a.focus == "diff" || a.focus == "editor") {
@@ -233,11 +241,17 @@ func (a *App) key(e *tcell.EventKey) {
 		case "pagedown":
 			a.moveGitSelection(max(1, a.gitChangesRect.H))
 		case "home":
-			a.gitSelected = 0
-			a.moveGitSelection(0)
+			a.moveGitSelection(-len(a.gitRows()))
 		case "end":
-			a.gitSelected = len(a.gitEntries()) - 1
-			a.moveGitSelection(0)
+			a.moveGitSelection(len(a.gitRows()))
+		case "left":
+			a.gitFoldSelection(false)
+		case "right":
+			a.gitFoldSelection(true)
+		case "space":
+			if a.gitGroupFocus != "" {
+				a.toggleGitGroup(a.gitGroupFocus)
+			}
 		case "s", "shift+s":
 			if e.Str() == "S" || name == "shift+s" {
 				a.gitAllAction(true)
@@ -251,6 +265,10 @@ func (a *App) key(e *tcell.EventKey) {
 				a.gitAction(false)
 			}
 		case "d", "shift+d", "enter":
+			if name == "enter" && a.gitGroupFocus != "" {
+				a.toggleGitGroup(a.gitGroupFocus)
+				return
+			}
 			if e.Str() == "D" || name == "shift+d" {
 				a.gitDiff(true)
 			} else {
@@ -833,6 +851,8 @@ func (a *App) mouse(e *tcell.EventMouse) {
 		case "panelSide":
 			w, _ := a.screen.Size()
 			a.panelWidth = max(28, w-x-1)
+		case "markdownSplit":
+			a.splitRatio = max(.2, min(.8, float64(x-a.editorArea.X)/float64(max(1, a.editorArea.W))))
 		case "split":
 			start := a.rects[0].X
 			a.splitRatio = max(.2, min(.8, float64(x-start)/float64(max(1, a.editorArea.W))))
@@ -877,7 +897,11 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			a.drag = "diffSplit"
 			return
 		}
-		if !a.comparing() && a.split && x == a.rects[1].X-1 {
+		if p := a.pluginPreview(); p != nil && x == p.Rect.X-1 && y >= 2 {
+			a.drag = "markdownSplit"
+			return
+		}
+		if a.pluginPreview() == nil && !a.comparing() && a.split && x == a.rects[1].X-1 {
 			a.drag = "split"
 			return
 		}
@@ -923,6 +947,9 @@ func (a *App) mouse(e *tcell.EventMouse) {
 	}
 	if a.panelVisible && a.panelRect.contains(x, y) {
 		a.panelMouse(e, fresh, wheel, previous)
+		return
+	}
+	if a.pluginSplitMouse(x, y, wheel, fresh, e.Modifiers()) {
 		return
 	}
 	if a.comparisonMouse(x, y, wheel, fresh, e.Modifiers()) {

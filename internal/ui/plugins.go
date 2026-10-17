@@ -189,7 +189,15 @@ func (a *App) installPlugin() {
 		}()
 	})
 }
-func (a *App) runPluginCommand(id, command string) {
+func (a *App) runPluginCommand(id, command string) { a.invokePluginCommand(id, command, nil) }
+
+func (a *App) invokePluginCommand(id, command string, formatting *pluginSplitPreview) {
+	started := false
+	defer func() {
+		if formatting != nil && !started {
+			formatting.ApplyWhenReady = false
+		}
+	}()
 	if a.comparing() {
 		a.notify("Open an editable document before running plugin commands")
 		return
@@ -222,19 +230,46 @@ func (a *App) runPluginCommand(id, command string) {
 		}
 	}
 	a.notify("Running " + status.Entry.Manifest.Name + "…")
+	started = true
 	go func() {
 		result, err := a.plugins.Invoke(a.ctx, id, plugin.Invocation{Command: command, Document: doc})
 		var changes []text.Edit
 		if err == nil && len(result.Edits) > 0 {
 			changes, err = validatePluginEdits(doc.Text, result.Edits)
 		}
+		if err == nil && result.Preview != nil && len(changes) > 0 {
+			// Display the exact candidate that will be applied, never a different
+			// plugin-supplied text beside unrelated edits.
+			if pluginEditedText(doc.Text, changes) != result.Preview.Text {
+				err = fmt.Errorf("plugin preview does not match its proposed edits")
+			}
+		}
 		a.post(func() {
+			if formatting != nil {
+				formatting.ApplyWhenReady = false
+				if a.pluginPreview() != formatting {
+					return
+				}
+				if d.Buffer != buffer || d.Buffer.Version != version || a.modal != nil {
+					a.notify("Document changed; formatting cancelled. Click Format to retry")
+					return
+				}
+			}
 			if err != nil {
 				a.notify(status.Entry.Manifest.Name + ": " + err.Error())
 				return
 			}
-			a.lastPluginResult = &pluginOutcome{id: id, name: status.Entry.Manifest.Name, doc: d, buffer: buffer, version: version, result: result, edits: changes, path: doc.Path}
-			if len(changes) == 0 {
+			a.lastPluginResult = &pluginOutcome{id: id, command: command, name: status.Entry.Manifest.Name, doc: d, buffer: buffer, version: version, result: result, edits: changes, path: doc.Path}
+			if formatting != nil {
+				if result.Preview == nil {
+					a.notify("Plugin did not return a formatting preview")
+					return
+				}
+				formatting.Outcome = a.lastPluginResult
+				a.applyPluginSplit()
+				return
+			}
+			if len(changes) == 0 && result.Preview == nil {
 				a.lastPluginResult.doc = nil
 				a.lastPluginResult.buffer = nil
 			}
@@ -248,12 +283,12 @@ func (a *App) runPluginCommand(id, command string) {
 }
 
 type pluginOutcome struct {
-	id, name, path string
-	doc            *editor.Document
-	buffer         *text.Buffer
-	version        int
-	result         plugin.Result
-	edits          []text.Edit
+	id, command, name, path string
+	doc                     *editor.Document
+	buffer                  *text.Buffer
+	version                 int
+	result                  plugin.Result
+	edits                   []text.Edit
 }
 
 func (a *App) showLastPluginResult() {
@@ -263,6 +298,14 @@ func (a *App) showLastPluginResult() {
 		return
 	}
 	d, buffer, version, result, changes := out.doc, out.buffer, out.version, out.result, out.edits
+	if result.Preview != nil {
+		if d == nil || a.comparing() || a.view().Doc != d {
+			a.notify("Plugin preview ignored: the document or active editor changed")
+			return
+		}
+		a.openPluginSplit(out)
+		return
+	}
 	if len(changes) > 0 {
 		if d == nil || a.comparing() || a.view().Doc != d || d.Buffer != buffer || d.Buffer.Version != version {
 			a.notify("Plugin result ignored: the document or active editor changed")

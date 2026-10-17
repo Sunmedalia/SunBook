@@ -20,19 +20,23 @@ func (a *App) setGitFilter(s string) {
 	a.gitFilter = s
 	a.gitFilterCursor = len(s)
 	a.gitSelected = 0
+	a.gitGroupFocus = ""
 	a.gitTop = 0
 }
 func (a *App) insertGitInput(s string) {
-	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ").Replace(s)
+	s = normalizeGitMessage(s)
 	value, cursor := &a.gitMessage, &a.gitMessageCursor
 	filter := a.focus == "gitFilter"
 	if filter {
+		s = strings.ReplaceAll(s, "\n", " ")
 		value, cursor = &a.gitFilter, &a.gitFilterCursor
 	}
+	*cursor = text.Snap(*value, *cursor)
 	*value = (*value)[:*cursor] + s + (*value)[*cursor:]
 	*cursor += len(s)
 	if filter {
 		a.gitSelected = 0
+		a.gitGroupFocus = ""
 		a.gitTop = 0
 	}
 }
@@ -55,9 +59,21 @@ func (a *App) gitInputKey(e *tcell.EventKey, name string) {
 		} else {
 			a.commit()
 		}
+	case "up":
+		if !filter {
+			a.moveGitMessageCursor(-1)
+		}
 	case "down":
-		a.focus = "git"
-		a.moveGitSelection(0)
+		if !filter {
+			a.moveGitMessageCursor(1)
+		} else {
+			a.focus = "git"
+			a.moveGitSelection(0)
+		}
+	case "ctrl+j", "shift+enter":
+		if !filter {
+			a.insertGitInput("\n")
+		}
 	case "tab":
 		if filter {
 			a.focus = "git"
@@ -72,10 +88,26 @@ func (a *App) gitInputKey(e *tcell.EventKey, name string) {
 		*cursor = text.Prev(*value, *cursor)
 	case "right":
 		*cursor = text.Next(*value, *cursor)
-	case "home", "ctrl+a":
+	case "ctrl+a", "ctrl+home":
 		*cursor = 0
-	case "end", "ctrl+e":
+	case "ctrl+e", "ctrl+end":
 		*cursor = len(*value)
+	case "home", "end":
+		if filter {
+			if name == "home" {
+				*cursor = 0
+			} else {
+				*cursor = len(*value)
+			}
+		} else {
+			lines := gitMessageLines(*value, a.gitMessageRect.W)
+			line := lines[gitMessageRow(lines, *cursor)]
+			if name == "home" {
+				*cursor = line.Start
+			} else {
+				*cursor = line.End
+			}
+		}
 	case "ctrl+u":
 		*value = ""
 		*cursor = 0
@@ -94,6 +126,7 @@ func (a *App) gitInputKey(e *tcell.EventKey, name string) {
 		}
 	}
 	if filter && name != "up" && name != "down" {
+		a.gitGroupFocus = ""
 		a.gitSelected = max(0, min(a.gitSelected, len(a.gitEntries())-1))
 		a.gitTop = 0
 	}

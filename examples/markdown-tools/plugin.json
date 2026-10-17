@@ -1,0 +1,15 @@
+{
+  "id": "markdown-tools",
+  "name": "Markdown Tools",
+  "version": "1.2.0",
+  "apiVersion": 1,
+  "description": "Live Markdown preview beside the editable source, explicit formatting, contents and tasks.",
+  "command": ["python3", "main.py"],
+  "permissions": ["document.read", "document.edit"],
+  "commands": [
+    {"id": "format-preview", "title": "Format Markdown in Split Preview"},
+    {"id": "update-toc", "title": "Update Table of Contents"},
+    {"id": "task-summary", "title": "Show Task Progress"},
+    {"id": "toggle-tasks", "title": "Toggle Selected Tasks"}
+  ]
+}

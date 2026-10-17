@@ -16,6 +16,7 @@ check:
 smoke: build
 	python3 -m unittest discover -s scripts -p 'test_*.py'
 	python3 scripts/smoke_tui.py ./sunbook
+	python3 scripts/smoke_markdown_plugin.py ./sunbook
 
 bench:
 	go test ./internal/text ./internal/ui ./internal/editor -run '^$$' -bench 'Benchmark(EditLargeDocument|EditMaterializedSnapshot|DiagnosticRendering|TerminalOutput|DiskChecks|MetadataDiskChecks)$$' -benchmem -count=5

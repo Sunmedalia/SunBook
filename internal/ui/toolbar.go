@@ -7,6 +7,13 @@ import (
 )
 
 func (a *App) buttonEnabled(id string) bool {
+	if id == "plugins.previewApply" {
+		p := a.pluginPreview()
+		return p != nil && !p.ApplyWhenReady
+	}
+	if id == "plugins.previewToggle" || id == "plugins.previewClose" {
+		return a.pluginPreview() != nil
+	}
 	if a.comparing() && comparisonReadOnlyCommand(id) {
 		return false
 	}

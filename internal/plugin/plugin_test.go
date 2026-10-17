@@ -136,6 +136,15 @@ func TestPluginHelper(t *testing.T) {
 				time.Sleep(time.Minute)
 			case "edits":
 				result = Result{Edits: []Edit{{Start: 0, End: 1, Text: "X"}}}
+			case "preview", "bad-preview", "large-preview":
+				preview := &Preview{Kind: "markdown", Text: "# Heading"}
+				if mode == "bad-preview" {
+					preview.Kind = "html"
+				}
+				if mode == "large-preview" {
+					preview.Text = strings.Repeat("x", 1024*1024+1)
+				}
+				result = Result{Preview: preview}
 			case "log-flood":
 				fmt.Fprint(os.Stderr, strings.Repeat("x", 2*1024*1024))
 				result = Result{Message: "should be rejected"}

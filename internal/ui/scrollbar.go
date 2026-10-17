@@ -87,6 +87,8 @@ func (a *App) scrollbarMouse(x, y int, pressed, fresh bool) bool {
 			a.active, a.focus = bar.Group, "editor"
 		case "diff":
 			a.comparison.Pane, a.focus = bar.Group, "diff"
+		case "pluginPreview":
+			a.focus = "markdown"
 		}
 		return true
 	}

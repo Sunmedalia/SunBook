@@ -95,4 +95,84 @@ func TestExtensionPreviewArtifact(t *testing.T) {
 	a.screen.Sync()
 	a.reviewPlugin(status)
 	save("plugin-review-narrow")
+	mt.SetSize(vt.Coord{X: 110, Y: 32})
+	a.screen.Sync()
+	a.sidebar = false
+	source = "#   Markdown 工作笔记  ###\n\n##   本周计划\n+ [X] 实现 Markdown 格式化\n+ [ ] 验证分屏预览\n\n### 使用说明\n原文 **保留**，右侧阅读预览支持 `代码`、列表和引用。\n\n> 确认后再应用，Ctrl+Z 一次撤销。\n\n```go\nfmt.Println(\"Hello, SunBook\")\n```\n\n| 功能 | 状态 |\n| --- | --- |\n| 格式化 | 完成 |\n| 分屏 | 完成 |\n"
+	formatted := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(source, "#   ", "# "), "  ###", ""), "+ [", "- [")
+	d := a.view().Doc
+	d.Buffer = text.New(source)
+	d.Path = "notes.md"
+	out := &pluginOutcome{name: "Markdown Tools", path: d.Path, doc: d, buffer: d.Buffer, version: d.Buffer.Version, result: plugin.Result{Preview: &plugin.Preview{Kind: "markdown", Text: formatted}}, edits: []text.Edit{{Start: 0, End: len(source), Text: formatted}}}
+	a.modal = nil
+	a.openPluginSplit(out)
+	a.draw()
+	waitUpdates(t, a, func() bool { return !a.pluginPreview().Rendering })
+	save("markdown-split-dark")
+	a.applyTheme(light.Theme)
+	save("markdown-split-light")
+	a.togglePluginSplitMode()
+	save("markdown-split-source")
+	a.togglePluginSplitMode()
+	mt.SetSize(vt.Coord{X: 60, Y: 20})
+	a.screen.Sync()
+	a.draw()
+	waitUpdates(t, a, func() bool { return !a.pluginPreview().Rendering })
+	save("markdown-split-narrow")
+
+	// Review the actual README table that previously truncated long descriptions.
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(readme), "| 功能 | 使用方式 |")
+	if start < 0 {
+		t.Fatal("README feature table missing")
+	}
+	table := string(readme)[start:]
+	if end := strings.Index(table, "\n\n"); end >= 0 {
+		table = table[:end]
+	}
+	d.Buffer = text.New("## 功能\n\n" + table + "\n")
+	d.Path = "README.md"
+	a.applyTheme(dark.Theme)
+	mt.SetSize(vt.Coord{X: 150, Y: 48})
+	a.screen.Sync()
+	p := a.pluginPreview()
+	p.Top = 0
+	p.Due = zeroTime
+	renderLivePreview(t, a)
+	save("markdown-table-wrap")
+
+	a.closePluginSplit()
+	a.sidebar = true
+	a.sidebarView = "Git"
+	a.sidebarWidth = 38
+	a.git = gitservice.Status{Root: a.root, Branch: "feature/source-control", HasCommits: true, Files: []gitservice.File{
+		{Path: "internal/ui/git_sidebar.go", Index: "M", Worktree: " "},
+		{Path: "README.md", Index: " ", Worktree: "M"},
+		{Path: "internal/ui/git_input.go", Index: " ", Worktree: "M"},
+		{Path: "docs/usage.md", Index: " ", Worktree: "M"},
+		{Path: "internal/ui/git_commit_ui.go", Index: "?", Worktree: "?"},
+		{Path: "notes/release.md", Index: "?", Worktree: "?"},
+	}}
+	a.gitError = ""
+	a.message = ""
+	a.gitActionError = ""
+	a.gitLog = []gitservice.Revision{{Hash: "a1b2c3d4", Author: "SunBook", Age: "2 hours ago", Subject: "Improve Markdown live preview"}}
+	a.gitLogLoaded = true
+	a.gitMessage = "feat: refine source control\n\nAdd collapsible change groups."
+	a.gitMessageCursor = 0
+	a.focus = "gitMessage"
+	mt.SetSize(vt.Coord{X: 130, Y: 36})
+	a.screen.Sync()
+	save("git-commit-dark")
+	a.toggleGitGroup("CHANGES")
+	a.toggleGitGroup("UNTRACKED")
+	save("git-groups-collapsed")
+	a.applyTheme(light.Theme)
+	save("git-commit-light")
+	mt.SetSize(vt.Coord{X: 60, Y: 14})
+	a.screen.Sync()
+	save("git-commit-compact")
 }

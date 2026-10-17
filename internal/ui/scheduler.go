@@ -21,6 +21,9 @@ func (a *App) nextWake(now time.Time) time.Time {
 			add(t)
 		}
 	}
+	if p := a.pluginPreview(); p != nil {
+		add(p.Due)
+	}
 	add(a.searchDue)
 	add(a.completionDue)
 	if a.message != "" {
@@ -50,6 +53,10 @@ func maxTime(a, b time.Time) time.Time {
 }
 
 func (a *App) runScheduled(now time.Time) {
+	if p := a.pluginPreview(); p != nil && !p.Due.IsZero() && !now.Before(p.Due) {
+		p.Due = zeroTime
+		a.invalidate()
+	}
 	if !a.nextPluginScan.IsZero() && !now.Before(a.nextPluginScan) {
 		a.nextPluginScan = now.Add(30 * time.Second)
 		a.refreshPlugins()

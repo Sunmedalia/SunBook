@@ -12,6 +12,8 @@ SunBook 插件是通过标准输入、标准输出通信的独立进程，适合
 
 试用仓库自带的 [Text Tools](../examples/text-tools)：安装 `examples/text-tools` 文件夹，启用后可运行 **Text Tools: Count Words** 和 **Text Tools: Uppercase Selection**。后者支持多个选区、中文和 Emoji。
 
+[Markdown Tools](../examples/markdown-tools) 提供 Markdown 格式化与左右分屏阅读/源码预览，以及标题目录、待办完成率和选中任务状态切换。安装 `examples/markdown-tools`，启用后在 F1 搜索 **Markdown Tools:**；仅需要文档读写权限，无需联网，修改继续使用宿主预览和一次撤销。
+
 手动安装也可将完整插件目录复制到配置目录的 `plugins/`，然后执行 **Plugins: Refresh Installed Plugins**；运行中也每 30 秒检查一次插件目录。批准覆盖整个插件包的路径、文件内容和文件可执行位，清单或代码变更均停止旧进程并要求重新审核；每次启动前也会重新校验。安装过程中源内容发生变化会拒绝安装。旧版仅针对清单的批准记录升级后需要重新审核一次。当前没有在线市场或自动下载、自动更新。
 
 ## 插件目录与清单
@@ -97,6 +99,22 @@ Linux 当前没有同等的文件/网络沙箱；环境变量过滤和临时 HOM
 所有选区和编辑位置都是 **原始快照中的 UTF-8 字节偏移**，区间为 `[start,end)`，不是 Python 字符下标或 JavaScript UTF-16 下标。允许反向选区；修改必须非重叠、处于完整 Unicode 字素边界，并且不能包含 NUL。快照使用 LF，宿主将返回文本中的 CRLF/CR 统一为 LF；保存时继续保留原文件的换行格式。宿主在后台校验全部修改，确认时再次核对活动文档、缓冲区身份和版本；过期结果整体拒绝，不部分应用。
 
 结果对象可包含 `title`、`message`、`body`、`edits`。无修改时 `body` 在可滚动结果窗口显示，否则显示 `message`；存在修改时进入确认预览。结果不会打断已打开的对话框，可关闭对话框后使用 **Plugins: Show Last Result** 查看最近一次结果。只保留最近一份结果；当前为只读 Git 对比时请先打开工作文件再运行插件。最多 10000 个修改、256KiB body、4096 字节 message、200 字节 title；修改后的文档最多 4MiB。大小以 UTF-8 编码后的字节数计。JSON 转义可能使消息超过传输限制，因此不要假设 4MiB 原始文本一定可以传输。
+
+### 分屏 Markdown 预览（可选能力）
+
+当前宿主初始化时额外声明 `preview.markdown`。这是 API v1 的可选扩展，旧插件仍兼容；插件或 SDK 必须先检测该能力，旧宿主缺少能力时返回升级说明，不应静默套用格式化修改。响应可包含 `preview: {"kind":"markdown","text":"# Formatted Markdown\n"}`，格式定义见 [result-v1.schema.json](plugins/result-v1.schema.json)。`preview.text` 为最多 1MiB 的 UTF-8 Markdown，无 NUL；仍受单条消息 4MiB 限制。
+
+```json
+{"jsonrpc":"2.0","id":3,"result":{"title":"Markdown formatting","preview":{"kind":"markdown","text":"# Notes\n\nText\n"},"edits":[{"start":0,"end":14,"text":"# Notes\n\nText\n"}]}}
+```
+
+宿主在原文件右侧打开预览，不创建新标签。左侧保留真实编辑器，可输入、粘贴、保存和撤销；右侧默认按标题、强调、代码、引用、列表、任务和表格排版，读取当前缓冲区（包括未保存的输入），约 100ms 输入停顿后后台更新。后台同时最多一个渲染任务，过期结果丢弃；最多渲染 1MiB。**Source/Read** 切换当前 Markdown 源码/阅读预览，鼠标分别滚动两侧，中线可拖动。切换文件时隐藏预览，回到原文件恢复，不改变已有编辑器组。
+
+**Format** 或 F1 → **Plugins: Format Preview Document** 单独应用格式化。存在 `edits` 时宿主在后台校验其最终文本必须与 `preview.text` 完全一致；应用时核对文档、缓冲区和版本。源文档改变后，点击 Format 重新运行原插件命令获取当前修改建议；请求期间继续输入、切换文件或关闭预览时，旧结果不会覆盖输入或重新打开预览。修改保持未保存并可一次撤销。没有修改时仍可查看实时预览。渲染本身不在每次输入时运行插件进程。
+
+右侧获得焦点后，`a` / Ctrl+Enter 格式化，`v` 切换模式，Tab 回编辑器，Esc 关闭。左侧字母键继续正常输入。**Close** 或 F1 → **Plugins: Close Formatting Preview** 关闭右侧；**Plugins: Toggle Preview Source / Reading** 切换模式。
+
+阅读渲染使用 [Goldmark](https://github.com/yuin/goldmark/tree/v1.8.6) 的 CommonMark/GFM 解析树，在后台完成解析与换行，按当前主题着色。表格按列宽自动换行，短列保留自然宽度、长说明使用剩余空间，不通过省略号截断内容；极窄窗口或列数过多时按整行换行展示。HTML 块与注释不执行并从阅读侧省略；图片只显示替代文字，不读取本地文件、不请求远程地址。链接只作为文本展示，终端控制字符不作为指令执行。源码侧保留这些原始内容。终端预览不支持浏览器 CSS、脚本、图片和数学公式渲染。
 
 普通业务错误示例：
 

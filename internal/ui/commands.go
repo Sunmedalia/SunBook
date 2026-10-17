@@ -33,6 +33,13 @@ func (a *App) registerCommands() {
 		{"app.help", "Help: Keyboard Shortcuts", "", a.help},
 		{"plugins.manage", "Plugins: Manage Installed Plugins", "", func() { a.showSidebar("Plugins") }},
 		{"plugins.lastResult", "Plugins: Show Last Result", "", a.showLastPluginResult},
+		{"plugins.previewApply", "Plugins: Format Preview Document", "", a.applyPluginSplit},
+		{"plugins.previewToggle", "Plugins: Toggle Preview Source / Reading", "", a.togglePluginSplitMode},
+		{"plugins.previewClose", "Plugins: Close Formatting Preview", "", func() {
+			if a.pluginPreview() != nil {
+				a.closePluginSplit()
+			}
+		}},
 		{"plugins.install", "Plugins: Install Local Plugin…", "", a.installPlugin},
 		{"plugins.refresh", "Plugins: Refresh Installed Plugins", "", a.refreshPlugins},
 		{"activity.plugins", "Activity: Toggle Plugins", "", func() { a.toggleSidebarView("Plugins") }},
@@ -138,6 +145,10 @@ func (a *App) registerCommands() {
 		{"git.stageCHANGES", "Git: Stage Tracked Changes", "", func() { a.gitStageGroup("CHANGES") }},
 		{"git.stageUNTRACKED", "Git: Stage Untracked Files", "", func() { a.gitStageGroup("UNTRACKED") }},
 		{"git.stageCONFLICTS", "Git: Stage Resolved Conflicts", "", func() { a.gitStageGroup("CONFLICTS") }},
+		{"git.toggleCHANGES", "Git: Expand / Collapse Changes", "", func() { a.toggleGitGroup("CHANGES") }},
+		{"git.toggleUNTRACKED", "Git: Expand / Collapse Untracked", "", func() { a.toggleGitGroup("UNTRACKED") }},
+		{"git.toggleSTAGED", "Git: Expand / Collapse Staged", "", func() { a.toggleGitGroup("STAGED") }},
+		{"git.toggleCONFLICTS", "Git: Expand / Collapse Conflicts", "", func() { a.toggleGitGroup("CONFLICTS") }},
 		{"git.history", "Git: Recent Commits", "", func() { a.gitHistory(false) }},
 		{"git.fileHistory", "Git: Selected File History", "", func() { a.gitHistory(true) }},
 		{"git.toggleLog", "Git: Expand / Restore Log", "", func() {
@@ -158,6 +169,14 @@ func (a *App) registerCommands() {
 	}
 }
 func (a *App) execute(id string) {
+	if a.pluginPreview() != nil && id == "view.other" {
+		if a.focus == "markdown" {
+			a.focus = "editor"
+		} else {
+			a.focus = "markdown"
+		}
+		return
+	}
 	if a.comparing() {
 		if id == "view.other" {
 			a.comparison.Pane = 1 - a.comparison.Pane
@@ -257,6 +276,8 @@ Enter / d                View selected comparison
 D                        View staged comparison
 o                        Open working file for editing
 c                        Focus commit message; Enter commits staged files
+Ctrl+J (message)         Insert a newline; arrows navigate wrapped lines
+Enter / Space (group)    Expand / collapse group; Left / Right folds / expands
 / or Ctrl+F              Filter changed paths
 h / Tab                  Focus log / switch lists
 Enter / click (log)      Expand commit files / folders; view file comparison
@@ -440,6 +461,9 @@ func (a *App) paste(s string) {
 	}
 	if a.focus == "gitMessage" || a.focus == "gitFilter" {
 		a.insertGitInput(s)
+		return
+	}
+	if a.comparing() {
 		return
 	}
 	if a.focus == "editor" && a.view().Insert(s) {

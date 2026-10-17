@@ -180,6 +180,26 @@ def main():
             wait_for(lambda: has_text(b"CONTROL") and (has_text(b"CHANGES") or has_text(b"UNTRACKED")), "Git sidebar")
             # Terminal diff rendering may skip unchanged spaces between words.
             wait_for(lambda: has_text(b"GIT LOG") and has_text(b"SMOKE"), "inline Git log")
+            # Group headings fold with the mouse and expand with the keyboard.
+            def sidebar_has(text):
+                return any(text in line[5:31] for line in screen.text.splitlines()[2:30])
+
+            wait_for(lambda: sidebar_has("UNTRACKED") and sidebar_has("library.rs"),
+                     "untracked group and file rows")
+            untracked_row = next(i for i, line in enumerate(screen.text.splitlines()) if "UNTRACKED" in line[5:31])
+            click(12, untracked_row + 1)
+            wait_for(lambda: sidebar_has("UNTRACKED") and not sidebar_has("library.rs"),
+                     "mouse collapses untracked files but keeps the heading")
+            os.write(master, b"\x1b[C")
+            wait_for(lambda: sidebar_has("library.rs"), "Right expands the selected group")
+            os.write(master, b"c")
+            paste("draft subject")
+            os.write(master, b"\x0a")  # Ctrl+J is scoped to message newlines.
+            paste("body line")
+            wait_for(lambda: sidebar_has("draft subject") and sidebar_has("body line"),
+                     "multiline commit composer in the real terminal")
+            os.write(master, b"\x15\x1b")  # Clear test draft and return to file list.
+            wait_for(lambda: " GIT " in screen.text.splitlines()[-1], "leave commit composer")
             # Select by path instead of relying on row order or a selection
             # preserved by an asynchronous Git refresh.
             clear_output()
@@ -202,7 +222,10 @@ def main():
                 raise AssertionError("comparison changed the working file")
             # The expanded commit lists its files directly below its metadata.
             clear_output()
-            click(15, 27)  # history.go beneath the first commit in the log
+            wait_for(lambda: any("history.go" in line[:31] for line in screen.text.splitlines()),
+                     "expanded commit file row")
+            history_row = next(i for i, line in enumerate(screen.text.splitlines()) if "history.go" in line[:31])
+            click(15, history_row + 1)
             wait_for(lambda: has_text(b"EMPTY") and has_text(b"committed"),
                      "Git log file opens committed snapshots")
             os.write(master, b"\x17")  # Ctrl+W closes the historic comparison
@@ -440,7 +463,7 @@ def main():
                 raise AssertionError(f"editor exited {proc.returncode}")
             if path.read_text(encoding="utf-8") != expected:
                 raise AssertionError("mouse or resize changed the document")
-            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, Settings/Classic/Expressive icon persistence, branch creation/switching, plugin install/permission review/commands/disable/remove/quarantine recovery, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
+            print("PTY smoke passed: Unicode save, terminal +/session switching/Hide/Kill, persistent Explorer/Search/Git sidebars, single-click preview, double-click keep, collapsible Git groups, multiline commit composer, staging, Git log file tree and historic comparison, Open browser, Quick Open, Help, themes/Auto color detection/terminal defaults, Settings/Classic/Expressive icon persistence, branch creation/switching, plugin install/permission review/commands/disable/remove/quarantine recovery, content scrollbar, toolbar, dock switching, tab drag, Split, mouse, resize, exit")
         finally:
             # Closing the PTY master first also releases a macOS child that is
             # exiting while its tty output is blocked after a failed assertion.

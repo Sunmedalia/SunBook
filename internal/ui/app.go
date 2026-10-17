@@ -91,6 +91,7 @@ type App struct {
 	pluginSelected, pluginTop                             int
 	pluginSelectID                                        string
 	lastPluginResult                                      *pluginOutcome
+	markdownPreview                                       *pluginSplitPreview
 	pluginRefreshing                                      bool
 	pluginRefreshPending                                  bool
 	ctx                                                   context.Context
@@ -167,7 +168,9 @@ type App struct {
 	gitReading                                            bool
 	gitSeq                                                int
 	gitMessage, gitFilter                                 string
-	gitMessageCursor, gitMessageOffset                    int
+	gitMessageCursor, gitMessageTop                       int
+	gitGroupFocus                                         string
+	gitCollapsed                                          map[string]bool
 	gitFilterCursor, gitFilterOffset                      int
 	gitMessageRect, gitFilterRect                         rect
 	gitListY                                              int
@@ -494,6 +497,9 @@ func (a *App) openFile(path string, preview bool) error {
 	return nil
 }
 func (a *App) changed(d *editor.Document) {
+	if p := a.markdownPreview; p != nil && p.Outcome.doc == d {
+		p.Due = time.Now().Add(100 * time.Millisecond)
+	}
 	a.scheduleMaintenance(d)
 	a.cancelCompletion()
 	a.keepDocument(d)
@@ -549,6 +555,10 @@ func mapOffset(p int, edits []text.Edit) int {
 	return p + delta
 }
 func (a *App) splitEditor() {
+	if a.pluginPreview() != nil {
+		a.closePluginSplit()
+		return
+	}
 	if a.comparison != nil {
 		a.comparison.Active = false
 	}
@@ -711,6 +721,9 @@ func (a *App) closeDocument(d *editor.Document) {
 	comparison := a.comparison
 	wasComparing := a.comparing()
 	a.confirmDocument(d, func() {
+		if p := a.markdownPreview; p != nil && p.Outcome.doc == d {
+			a.closePluginSplit()
+		}
 		if a.lastPluginResult != nil && a.lastPluginResult.doc == d {
 			a.lastPluginResult.doc = nil
 			a.lastPluginResult.buffer = nil
@@ -793,6 +806,7 @@ func (a *App) switchWorkspace() {
 			}
 			a.languageSeq++
 			a.lastPluginResult = nil
+			a.markdownPreview = nil
 			a.clients = map[string]*lsp.Client{}
 			a.starting = map[string]bool{}
 			a.serverErrors = map[string]string{}
@@ -812,6 +826,9 @@ func (a *App) switchWorkspace() {
 			a.gitError = ""
 			a.gitSelected = 0
 			a.gitTop = 0
+			a.gitGroupFocus = ""
+			a.gitCollapsed = nil
+			a.gitMessageTop = 0
 			a.gitMessage, a.gitFilter, a.gitActionError = "", "", ""
 			a.gitMessageCursor, a.gitFilterCursor = 0, 0
 			a.gitViewSeq++

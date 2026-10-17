@@ -14,6 +14,20 @@ spec.loader.exec_module(sdk)
 
 
 class PluginSDKTests(unittest.TestCase):
+    def test_markdown_preview_requires_capability_and_valid_payload(self):
+        plugin = sdk.Plugin({"preview": lambda doc: {"preview": {"kind": "markdown", "text": "# 中文"}}})
+        plugin.dispatch("initialize", {"protocolVersion": 1})
+        with self.assertRaises(sdk.PluginError):
+            plugin.dispatch("execute", {"command": "preview"})
+        self.assertEqual(plugin.dispatch("ping", {}), {})
+        plugin.dispatch("initialize", {"protocolVersion": 1, "capabilities": ["preview.markdown"]})
+        self.assertEqual(plugin.dispatch("execute", {"command": "preview"})["preview"]["text"], "# 中文")
+        for bad in ({"kind": "html", "text": "<script>"}, {"kind": "markdown", "text": "bad\0text"}, {"kind": "markdown", "text": "x" * (1024 * 1024 + 1)}):
+            plugin.commands["preview"] = lambda doc: {"preview": bad}
+            with self.assertRaises(sdk.PluginError):
+                plugin.dispatch("execute", {"command": "preview"})
+        self.assertEqual(plugin.dispatch("ping", {}), {})
+
     def test_schema_version_pattern_accepts_checked_in_example(self):
         schema = json.loads((ROOT / "docs/plugins/manifest-v1.schema.json").read_text())
         pattern = schema["properties"]["version"]["pattern"]
@@ -58,8 +72,10 @@ class PluginSDKTests(unittest.TestCase):
             self.assertEqual(responses[2]["result"], {})
 
     def test_vendored_example_sdk_matches(self):
-        self.assertEqual((ROOT / "sdk/python/sunbook_plugin.py").read_bytes(),
-                         (ROOT / "examples/text-tools/sunbook_plugin.py").read_bytes())
+        canonical = (ROOT / "sdk/python/sunbook_plugin.py").read_bytes()
+        for vendored in (ROOT / "examples").glob("*/sunbook_plugin.py"):
+            with self.subTest(plugin=vendored.parent.name):
+                self.assertEqual(canonical, vendored.read_bytes())
 
 
 if __name__ == "__main__":

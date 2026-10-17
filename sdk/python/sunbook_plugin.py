@@ -30,12 +30,14 @@ class Plugin:
     def __init__(self, commands):
         self.commands = commands
         self.initialized = False
+        self.capabilities = set()
 
     def dispatch(self, method, params):
         if method == "initialize":
             if params.get("protocolVersion") != API_VERSION:
                 raise PluginError("Unsupported protocol", -32602)
             self.initialized = True
+            self.capabilities = set(params.get("capabilities", []))
             return {"protocolVersion": API_VERSION}
         if not self.initialized:
             raise PluginError("Initialize first", -32002)
@@ -55,6 +57,15 @@ class Plugin:
             if "edits" in result and (not isinstance(result["edits"], list)
                                       or len(result["edits"]) > 10000):
                 raise PluginError("edits must be an array of at most 10000 changes")
+            if "preview" in result:
+                preview = result["preview"]
+                if "preview.markdown" not in self.capabilities:
+                    raise PluginError("Update SunBook to a version that supports split Markdown previews.")
+                if (not isinstance(preview, dict) or preview.get("kind") != "markdown"
+                        or not isinstance(preview.get("text"), str)
+                        or len(preview["text"].encode("utf-8")) > 1024 * 1024
+                        or "\0" in preview["text"]):
+                    raise PluginError("preview must contain Markdown text up to 1 MiB without NUL")
             return result
         raise PluginError("Unknown method", -32601)
 

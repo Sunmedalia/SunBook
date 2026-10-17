@@ -65,6 +65,12 @@ func (a *App) refreshGit() {
 			if fallback >= 0 {
 				a.gitSelected = fallback
 			}
+			rows := a.gitRows()
+			if len(rows) > 0 {
+				a.selectGitRow(rows[a.selectedGitRow(rows)])
+			} else {
+				a.gitGroupFocus = ""
+			}
 			a.gitTop = max(0, min(a.gitTop, max(0, len(a.gitRows())-1)))
 			if headChanged || !a.gitLogReading && (!a.gitLogLoaded || time.Since(a.gitLogRefreshed) >= time.Minute) {
 				a.refreshGitLog()
@@ -261,6 +267,7 @@ func (a *App) commit() {
 		if a.gitMessage == msg {
 			a.gitMessage = ""
 			a.gitMessageCursor = 0
+			a.gitMessageTop = 0
 		}
 	})
 }

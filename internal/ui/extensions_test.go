@@ -31,7 +31,7 @@ func waitPluginUI(t *testing.T, a *App, ready func() bool) {
 		}
 	}
 }
-func examplePluginApp(t *testing.T) *App {
+func examplePluginApp(t *testing.T, ids ...string) *App {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("Python example requires python3")
@@ -40,7 +40,11 @@ func examplePluginApp(t *testing.T) *App {
 	a.plugins.Close()
 	a.cfg.FilePath = filepath.Join(t.TempDir(), "config.json")
 	a.plugins = plugin.NewManager(a.ctx, a.pluginDirectory())
-	source, err := filepath.Abs("../../examples/text-tools")
+	id := "text-tools"
+	if len(ids) > 0 {
+		id = ids[0]
+	}
+	source, err := filepath.Abs(filepath.Join("../../examples", id))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,6 +54,67 @@ func examplePluginApp(t *testing.T) *App {
 	a.refreshPlugins()
 	waitPluginUI(t, a, func() bool { return !a.pluginRefreshing && len(a.pluginStatuses) == 1 })
 	return a
+}
+
+func TestMarkdownPluginInstallCommandsPreviewAndUndo(t *testing.T) {
+	a := examplePluginApp(t, "markdown-tools")
+	status := a.pluginStatuses[0]
+	if status.State != plugin.Disabled || status.Entry.Manifest.Allows(plugin.Network) || len(status.Entry.Manifest.Commands) != 4 {
+		t.Fatal("unexpected Markdown plugin permissions or initial state", status)
+	}
+	a.showSidebar("Plugins")
+	a.pluginDetails()
+	a.modalAccept() // Open the permission review.
+	if a.modal == nil || !strings.Contains(strings.Join(a.modal.Body, " "), "document.edit") {
+		t.Fatal("Markdown permissions are not reviewed")
+	}
+	a.modalAccept()
+	waitPluginUI(t, a, func() bool { return !a.pluginRefreshing && a.pluginStatuses[0].State == plugin.Ready })
+	source := "# 计划 👩‍💻\n\n## 准备\n\n- [ ] 编写\n- [x] 测试\n\n### 发布\n"
+	a.view().Doc.Path = filepath.Join(a.root, "notes.md")
+	a.view().Doc.Buffer = text.New(source)
+	a.view().Selections = []text.Selection{{}}
+	a.execute("plugin.markdown-tools/update-toc")
+	waitPluginUI(t, a, func() bool { return a.modal != nil && strings.HasPrefix(a.modal.Title, "Apply Markdown Tools") })
+	if a.view().Doc.Buffer.String() != source {
+		t.Fatal("contents changed before accepting preview")
+	}
+	a.modalAccept()
+	updated := a.view().Doc.Buffer.String()
+	if !strings.Contains(updated, "- [准备](#准备)") || !strings.Contains(updated, "  - [发布](#发布)") {
+		t.Fatal("Unicode table of contents was not inserted", updated)
+	}
+	a.execute("edit.undo")
+	if a.view().Doc.Buffer.String() != source {
+		t.Fatal("contents did not undo in one step")
+	}
+	a.execute("plugin.markdown-tools/task-summary")
+	waitPluginUI(t, a, func() bool { return a.modal != nil && a.modal.Title == "Markdown task progress" })
+	if !strings.Contains(strings.Join(a.modal.Body, "\n"), "Completed: 1/2 (50%)") || a.view().Doc.Buffer.String() != source {
+		t.Fatal("task report changed document or returned incorrect counts")
+	}
+	a.modal = nil
+	a.view().Selections = []text.Selection{{Anchor: len(source), Head: 0}}
+	a.execute("plugin.markdown-tools/toggle-tasks")
+	waitPluginUI(t, a, func() bool { return a.modal != nil && strings.HasPrefix(a.modal.Title, "Apply Markdown Tools") })
+	if a.view().Doc.Buffer.String() != source {
+		t.Fatal("tasks changed before preview acceptance")
+	}
+	a.modalAccept()
+	if got := a.view().Doc.Buffer.String(); !strings.Contains(got, "[x] 编写") || !strings.Contains(got, "[ ] 测试") {
+		t.Fatal("Unicode task offsets were not applied", got)
+	}
+	a.execute("edit.undo")
+	if a.view().Doc.Buffer.String() != source {
+		t.Fatal("task edits did not undo in one step")
+	}
+	if err := a.plugins.Restart("markdown-tools"); err != nil {
+		t.Fatal(err)
+	}
+	a.updatePluginCommands()
+	waitPluginUI(t, a, func() bool { return a.pluginStatuses[0].State == plugin.Ready })
+	a.setPluginEnabled(a.pluginStatuses[0], false)
+	waitPluginUI(t, a, func() bool { return !a.pluginRefreshing && a.pluginStatuses[0].State == plugin.Disabled })
 }
 func TestPluginInstallReviewCommandPreviewUndoAndDisable(t *testing.T) {
 	a := examplePluginApp(t)

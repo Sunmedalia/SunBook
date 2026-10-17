@@ -234,9 +234,10 @@ Python environment, or `tsconfig.json` gives better results than loose files.
 
 Click the branch icon, use Ctrl+Shift+G, or **View: Source Control** from F1 to open the Git
 sidebar. Staged files, tracked changes, untracked files, and conflicts have
-separate counted groups and colored status badges. A file with both staged and
+separate counted groups and colored status badges. Click a group heading to collapse or expand its files. Up/Down navigates headings and files, Enter/Space toggles a heading, and Left/Right folds or expands it. Counts and group stage/unstage buttons remain available when collapsed; refreshing status and switching sidebars preserve fold state. A file with both staged and
 unstaged edits appears in each group. Filenames stay readable in narrow sidebars;
 hover shows the full path. Branch arrows show ahead/behind counts from local refs.
+
 
 Click a row or press `d`/Enter to open an editor comparison tab. Staged changes
 compare HEAD with Index; unstaged changes compare Index with the saved worktree.
@@ -269,9 +270,7 @@ commit and scroll position without progress messages or flickering buttons.
 entire group; `−` unstages all staged files. **More** also provides repository-wide
 stage/unstage and repository details. `S` / `U` stage / unstage all changes.
 
-Press `c` or click the message field to write a commit message, then Enter or
-**Commit** to commit staged files only. Drafts survive sidebar switches and failed
-commits; successful commits clear the submitted draft. Conflicts block commits
+Press `c` or click the message field to write a commit message. The composer wraps long lines and shows three lines when space permits. Paste a subject and description, or use Ctrl+J (Shift+Enter on supported terminals) to insert a newline. Enter or **Commit · N** commits the staged files; `N` is the staged file count. The button is disabled while Git is busy, when nothing is staged, or when conflicts remain. Drafts survive sidebar switches and failed commits; successful commits clear the submitted draft unless you have started editing another message. Small terminals show one line while retaining the complete draft. Conflicts block commits
 until resolved and staged. Git operates on saved files on disk. `/` or Ctrl+F
 filters changed paths; Esc in the filter clears it. Small terminals provide the
 filter in a prompt. Filtering does not change the scope of commits or group/batch
@@ -400,3 +399,5 @@ sunbook --check-plugin /absolute/path/to/text-tools
 ```
 
 This check starts local plugin code and verifies initialization and ping without running contributed commands. Install any required Python/Node runtime yourself. There is no marketplace or automatic download/update. Branch management and plugins are source-tree additions for the next release; the v0.1.0 download does not contain them.
+
+The installable **Markdown Tools** example adds **Format Markdown in Split Preview**. Run it from F1 to open a live reading pane immediately to the right of the original file, without adding a tab. Keep editing, pasting, saving and undoing in the left editor; unsaved Markdown renders in the background after a roughly 100 ms pause. Click **Format** (or F1 → **Plugins: Format Preview Document**) to explicitly format the current source with one-step undo, then Ctrl+S to save. Formatting never replaces edits made while the plugin is running. **Source/Read** switches the right pane to the current Markdown source; **Close** removes it. With focus in the right pane, `a` / Ctrl+Enter formats, `v` toggles, Tab returns to editing, and Esc closes. Drag the divider to resize; panes scroll independently. Switching files hides the preview until you return to its source. Existing editor groups are preserved. Code, HTML blocks and front matter are preserved by the formatter; the terminal reading view does not execute HTML or load images. See the [plugin README](../examples/markdown-tools) for formatting rules and limitations.

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SunBook API v1 command result",
+  "description": "Text length limits are also enforced as UTF-8 bytes by the host.",
+  "type": "object",
+  "properties": {
+    "title": {"type": "string", "maxLength": 200},
+    "message": {"type": "string", "maxLength": 4096},
+    "body": {"type": "string", "maxLength": 262144},
+    "edits": {
+      "type": ["array", "null"],
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "text"],
+        "properties": {
+          "start": {"type": "integer", "minimum": 0},
+          "end": {"type": "integer", "minimum": 0},
+          "text": {"type": "string"}
+        }
+      }
+    },
+    "preview": {
+      "type": ["object", "null"],
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": {"const": "markdown"},
+        "text": {"type": "string", "maxLength": 1048576, "pattern": "^[^\u0000]*$"}
+      }
+    }
+  }
+}

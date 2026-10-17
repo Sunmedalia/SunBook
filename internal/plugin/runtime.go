@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 type State string
@@ -159,7 +161,7 @@ func (r *runtime) loop(healthEvery time.Duration) {
 				var hello struct {
 					ProtocolVersion int `json:"protocolVersion"`
 				}
-				err = p.call(ctx, "initialize", map[string]any{"protocolVersion": ProtocolVersion, "host": "SunBook", "capabilities": []string{"commands", "document.read", "document.edit"}}, &hello)
+				err = p.call(ctx, "initialize", map[string]any{"protocolVersion": ProtocolVersion, "host": "SunBook", "capabilities": []string{"commands", "document.read", "document.edit", "preview.markdown"}}, &hello)
 				cancel()
 				if err == nil && hello.ProtocolVersion != ProtocolVersion {
 					err = errors.New("plugin selected an incompatible protocol")
@@ -195,6 +197,12 @@ func (r *runtime) loop(healthEvery time.Duration) {
 			}
 			if err == nil && !r.entry.Manifest.Allows(EditDocument) && len(result.Edits) > 0 {
 				err = &RPCError{Code: -32602, Message: "plugin lacks document.edit permission"}
+			}
+			if err == nil && result.Preview != nil {
+				preview := result.Preview
+				if preview.Kind != "markdown" || len(preview.Text) > 1024*1024 || !utf8.ValidString(preview.Text) || strings.ContainsRune(preview.Text, 0) {
+					err = errors.New("invalid Markdown preview; expected UTF-8 text up to 1 MiB without NUL")
+				}
 			}
 			job.result <- callResult{result: result, err: err}
 			var applicationError *RPCError

@@ -177,6 +177,9 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 		if a.gitLogMouse(x, y, wheel, fresh) {
 			return
 		}
+		if a.gitMessageMouse(x, y, fresh) {
+			return
+		}
 		for _, field := range []struct {
 			r      rect
 			focus  string
@@ -184,7 +187,6 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 			offset int
 			cursor *int
 		}{
-			{a.gitMessageRect, "gitMessage", a.gitMessage, a.gitMessageOffset, &a.gitMessageCursor},
 			{a.gitFilterRect, "gitFilter", a.gitFilter, a.gitFilterOffset, &a.gitFilterCursor},
 		} {
 			if fresh && field.r.contains(x, y) {
@@ -211,6 +213,7 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 					}
 				}
 				if fresh {
+					a.gitGroupFocus = ""
 					a.gitSelected = hit.Index
 					a.selectedGitDiff()
 				}
