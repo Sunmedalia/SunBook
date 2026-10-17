@@ -376,8 +376,7 @@ CI runs race tests, vet, and the PTY smoke test on macOS and Linux.
 Code is divided into `text` (piece table/history), `editor` (documents/views),
 `ui` (event loop/rendering/commands), `lsp`, `git`, `terminal`, `clipboard`, and
 `config`. The UI event loop owns mutable editor state. Workers post immutable,
-version-checked results. The first release does not provide DAP debugging,
-extensions, remote development, Vim modes, or VS Code configuration imports.
+version-checked results. SunBook does not provide DAP debugging, remote development, Vim modes, or VS Code configuration imports.
 
 
 ## Branch management
@@ -398,6 +397,6 @@ API v1 uses JSON-RPC over newline-delimited stdio and keeps plugins out of the e
 sunbook --check-plugin /absolute/path/to/text-tools
 ```
 
-This check starts local plugin code and verifies initialization and ping without running contributed commands. Install any required Python/Node runtime yourself. There is no marketplace or automatic download/update. Branch management and plugins are source-tree additions for the next release; the v0.1.0 download does not contain them.
+This check starts local plugin code and verifies initialization and ping without running contributed commands. Install any required Python/Node runtime yourself. There is no marketplace or automatic download/update. Release v0.2.0 includes branch management and local plugins. Archives contain installable examples in `examples/text-tools` and `examples/markdown-tools`, plus the Python SDK in `sdk/python`.
 
 The installable **Markdown Tools** example adds **Format Markdown in Split Preview**. Run it from F1 to open a live reading pane immediately to the right of the original file, without adding a tab. Keep editing, pasting, saving and undoing in the left editor; unsaved Markdown renders in the background after a roughly 100 ms pause. Click **Format** (or F1 → **Plugins: Format Preview Document**) to explicitly format the current source with one-step undo, then Ctrl+S to save. Formatting never replaces edits made while the plugin is running. **Source/Read** switches the right pane to the current Markdown source; **Close** removes it. With focus in the right pane, `a` / Ctrl+Enter formats, `v` toggles, Tab returns to editing, and Esc closes. Drag the divider to resize; panes scroll independently. Switching files hides the preview until you return to its source. Existing editor groups are preserved. Code, HTML blocks and front matter are preserved by the formatter; the terminal reading view does not execute HTML or load images. See the [plugin README](../examples/markdown-tools) for formatting rules and limitations.

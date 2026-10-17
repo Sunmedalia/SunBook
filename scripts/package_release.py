@@ -10,6 +10,16 @@ import tarfile
 import tempfile
 
 
+def release_member(info):
+    """Exclude runtime caches from installable plugin packages."""
+    parts = Path(info.name).parts
+    if "__pycache__" in parts or Path(info.name).name == ".DS_Store":
+        return None
+    if info.name.endswith((".pyc", ".pyo")):
+        return None
+    return info
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True, help="release version, e.g. v0.1.0")
@@ -39,8 +49,8 @@ def main():
         try:
             with tarfile.open(staging, "w:gz") as bundle:
                 bundle.add(binary, arcname=f"{name}/sunbook")
-                for path in ["README.md", "CHANGELOG.md", "config.example.json", "docs"]:
-                    bundle.add(root / path, arcname=f"{name}/{path}")
+                for path in ["README.md", "CHANGELOG.md", "config.example.json", "docs", "examples", "sdk"]:
+                    bundle.add(root / path, arcname=f"{name}/{path}", filter=release_member)
             staging.replace(archive)
         finally:
             staging.unlink(missing_ok=True)

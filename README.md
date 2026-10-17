@@ -28,7 +28,7 @@
 | 主题 | 6 套深浅主题，可在界面中切换并自动记住选择 |
 | 文件保存 | 保留 UTF-8 BOM、LF/CRLF 和文件权限；原子保存、未保存提醒与磁盘冲突检测 |
 
-分支管理与插件系统属于当前源码的新增功能，尚未包含在 v0.1.0 Release 中；请从源码构建使用。
+v0.2.0 包含分支管理、本地插件、Markdown 实时预览和优化后的 Git 提交界面。安装包附带示例插件与 Python SDK。
 
 ## 安装
 
@@ -36,25 +36,27 @@
 
 在 [Releases](https://github.com/Sunmedalia/SunBook/releases/latest) 下载对应平台的压缩包，**无需安装 Go**。
 
-| 平台 | v0.1.0 安装包 |
+| 平台 | v0.2.0 安装包 |
 | --- | --- |
-| macOS · Apple Silicon | `sunbook_0.1.0_darwin_arm64.tar.gz` |
-| macOS · Intel | `sunbook_0.1.0_darwin_amd64.tar.gz` |
-| Linux · x86-64 | `sunbook_0.1.0_linux_amd64.tar.gz` |
-| Linux · ARM64 | `sunbook_0.1.0_linux_arm64.tar.gz` |
+| macOS · Apple Silicon | `sunbook_0.2.0_darwin_arm64.tar.gz` |
+| macOS · Intel | `sunbook_0.2.0_darwin_amd64.tar.gz` |
+| Linux · x86-64 | `sunbook_0.2.0_linux_amd64.tar.gz` |
+| Linux · ARM64 | `sunbook_0.2.0_linux_arm64.tar.gz` |
 
 例如在 Apple Silicon Mac 上安装：
 
 ```sh
-curl -fLO https://github.com/Sunmedalia/SunBook/releases/download/v0.1.0/sunbook_0.1.0_darwin_arm64.tar.gz
-curl -fLO https://github.com/Sunmedalia/SunBook/releases/download/v0.1.0/SHA256SUMS
+curl -fLO https://github.com/Sunmedalia/SunBook/releases/download/v0.2.0/sunbook_0.2.0_darwin_arm64.tar.gz
+curl -fLO https://github.com/Sunmedalia/SunBook/releases/download/v0.2.0/SHA256SUMS
 shasum -a 256 --check --ignore-missing SHA256SUMS
 
-tar -xzf sunbook_0.1.0_darwin_arm64.tar.gz
+tar -xzf sunbook_0.2.0_darwin_arm64.tar.gz
 mkdir -p "$HOME/.local/bin"
-install -m 755 sunbook_0.1.0_darwin_arm64/sunbook "$HOME/.local/bin/sunbook"
+install -m 755 sunbook_0.2.0_darwin_arm64/sunbook "$HOME/.local/bin/sunbook"
 "$HOME/.local/bin/sunbook" --version
 ```
+
+安装包中的 `examples/markdown-tools` 和 `examples/text-tools` 可通过 **F1 → Plugins: Install Local Plugin…** 安装，审核后启用；这两个示例需要 Python 3.9+。
 
 将 `~/.local/bin` 加入 `PATH` 后即可直接运行 `sunbook`。Linux 校验压缩包可使用 `sha256sum --check --ignore-missing SHA256SUMS`。
 
@@ -191,7 +193,7 @@ go run ./cmd/sunbook --check-plugin examples/text-tools
 make build                  # 构建本机程序
 make check                  # 竞态测试和 go vet
 make smoke                  # 真实 PTY 冒烟测试，需要 git、ripgrep 和 Python 3
-python3 scripts/package_release.py --version 0.1.0 --os darwin --arch arm64
+python3 scripts/package_release.py --version 0.2.0 --os darwin --arch arm64
 ```
 
 [CI](https://github.com/Sunmedalia/SunBook/actions/workflows/ci.yml) 在 macOS 和 Linux 上检查格式、依赖、竞态、vet 与真实终端交互。推送 `vX.Y.Z` 标签会运行同样的检查，再打包四个平台、生成 `SHA256SUMS` 并发布 [Release](https://github.com/Sunmedalia/SunBook/releases)。发布说明放在 `docs/releases/<tag>.md`；没有对应文件时自动生成。
