@@ -514,7 +514,7 @@ func (a *App) changed(d *editor.Document) {
 		}
 	}
 	if c := a.opened[d]; c != nil {
-		c.Change(d.Path, d.Buffer.String(), d.Buffer.Version)
+		c.SyncBuffer(d.Path, d.Buffer)
 	}
 	delete(a.diagnostics, lsp.URI(d.Path))
 	delete(a.diagnosticCache, d)
@@ -686,7 +686,7 @@ func (a *App) saveAs(d *editor.Document, done func()) {
 				return
 			}
 			if c := a.opened[d]; c != nil {
-				c.Notify("textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": lsp.URI(old)}})
+				c.CloseDocument(old)
 				delete(a.opened, d)
 			}
 			delete(a.diagnostics, lsp.URI(old))
@@ -736,7 +736,7 @@ func (a *App) closeDocument(d *editor.Document) {
 			}
 		}
 		if c := a.opened[d]; c != nil {
-			c.Notify("textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": lsp.URI(d.Path)}})
+			c.CloseDocument(d.Path)
 			delete(a.opened, d)
 		}
 		delete(a.diagnostics, lsp.URI(d.Path))

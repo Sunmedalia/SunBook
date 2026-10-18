@@ -78,7 +78,7 @@ func TestRequestQueueBoundAndChangeBarriers(t *testing.T) {
 	c.Change("a", "two", 2)
 	c.Notify("textDocument/didSave", nil)
 	c.Change("a", "three", 3)
-	if len(c.jobs) != 3 || c.jobs[0].params.(map[string]any)["contentChanges"].([]map[string]string)[0]["text"] != "two" {
+	if len(c.jobs) != 3 || c.jobs[0].params.(*didChangeParams).ContentChanges[0].Text != "two" {
 		t.Fatal("change coalescing crossed barrier")
 	}
 	c.jobs = make([]job, 1024)

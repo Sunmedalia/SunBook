@@ -33,6 +33,12 @@ type TextEdit struct {
 	Range   Range  `json:"range"`
 	NewText string `json:"newText"`
 }
+
+// ContentChange is one didChange entry; a nil Range replaces the whole document.
+type ContentChange struct {
+	Range *Range `json:"range,omitempty"`
+	Text  string `json:"text"`
+}
 type Diagnostic struct {
 	Range    Range  `json:"range"`
 	Severity int    `json:"severity"`
@@ -104,6 +110,40 @@ func Edits(b *text.Buffer, edits []TextEdit) ([]text.Edit, error) {
 	return out, nil
 }
 
+// Changes describes the buffer's last transaction as sequential LSP changes.
+// Edits are sent left to right: the text before each edit already matches the
+// new buffer, and the removed text gives the end of the replaced range.
+func Changes(b *text.Buffer) ([]ContentChange, bool) {
+	if len(b.LastEdits) == 0 || len(b.LastRemoved) != len(b.LastEdits) {
+		return nil, false
+	}
+	changes := make([]ContentChange, len(b.LastEdits))
+	delta := 0
+	for i, e := range b.LastEdits {
+		start := At(b, e.Start+delta)
+		end := start
+		removed := b.LastRemoved[i]
+		if n := strings.LastIndexByte(removed, '\n'); n >= 0 {
+			end = Position{start.Line + strings.Count(removed, "\n"), utf16Len(removed[n+1:])}
+		} else {
+			end.Character += utf16Len(removed)
+		}
+		changes[i] = ContentChange{Range: &Range{start, end}, Text: e.Text}
+		delta += len(e.Text) - (e.End - e.Start)
+	}
+	return changes, true
+}
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r > 0xffff {
+			n++
+		}
+	}
+	return n
+}
+
 type transport struct {
 	io.ReadCloser
 	writer io.WriteCloser
@@ -125,6 +165,20 @@ type job struct {
 	params     any
 	callback   func(json.RawMessage, error)
 }
+type versionedDocument struct {
+	URI     string `json:"uri"`
+	Version int    `json:"version"`
+}
+type didChangeParams struct {
+	TextDocument   versionedDocument `json:"textDocument"`
+	ContentChanges []ContentChange   `json:"contentChanges"`
+}
+
+// syncedBuffer is the buffer state the server last received for a path.
+type syncedBuffer struct {
+	buffer  *text.Buffer
+	version int
+}
 type Client struct {
 	conn          *jsonrpc2.Conn
 	cmd           *exec.Cmd
@@ -141,6 +195,8 @@ type Client struct {
 	Capabilities  map[string]json.RawMessage
 	onDiagnostics func(Diagnostics)
 	onMessage     func(string)
+	incremental   bool
+	synced        map[string]syncedBuffer
 	once          sync.Once
 	failure       sync.Once
 	writeTimeout  time.Duration
@@ -199,6 +255,7 @@ func Start(parent context.Context, root string, s config.Server, onDiagnostics f
 		return nil, fmt.Errorf("initialize %s: %w", s.Command, e)
 	}
 	c.Capabilities = result.Capabilities
+	c.incremental = syncKind(c.Capabilities["textDocumentSync"]) == 2
 	if raw := c.Capabilities["positionEncoding"]; len(raw) > 0 && string(raw) != "\"utf-16\"" {
 		c.Close()
 		return nil, errors.New("language server did not select UTF-16 positions")
@@ -213,13 +270,27 @@ func Start(parent context.Context, root string, s config.Server, onDiagnostics f
 	go c.loop()
 	return c, nil
 }
+
+// textDocumentSync is either a TextDocumentSyncKind or an options object.
+func syncKind(raw json.RawMessage) int {
+	var kind int
+	if json.Unmarshal(raw, &kind) == nil {
+		return kind
+	}
+	var options struct {
+		Change int `json:"change"`
+	}
+	_ = json.Unmarshal(raw, &options)
+	return options.Change
+}
 func (c *Client) Supports(key string) bool {
 	raw := c.Capabilities[key]
 	return len(raw) > 0 && string(raw) != "false" && string(raw) != "null"
 }
 
-// enqueue never waits on server IO. Only adjacent full-document changes may
-// replace one another: requests, saves and closes are ordering barriers.
+// enqueue never waits on server IO. Only adjacent changes to one document are
+// merged: a full-document change replaces the pending one and range changes
+// are appended. Requests, saves and closes are ordering barriers.
 func (c *Client) enqueue(j job) bool {
 	c.queueMu.Lock()
 	defer c.queueMu.Unlock()
@@ -227,9 +298,8 @@ func (c *Client) enqueue(j job) bool {
 		return false
 	}
 	n := len(c.jobs)
-	if j.changePath != "" && n > 0 && c.jobs[n-1].changePath == j.changePath {
-		c.jobs[n-1] = j
-	} else {
+	merged := j.changePath != "" && n > 0 && c.jobs[n-1].changePath == j.changePath && mergeChanges(&c.jobs[n-1], j)
+	if !merged {
 		if n >= 1024 {
 			return false
 		}
@@ -239,6 +309,23 @@ func (c *Client) enqueue(j job) bool {
 	case c.wake <- struct{}{}:
 	default:
 	}
+	return true
+}
+func mergeChanges(pending *job, next job) bool {
+	before, ok := pending.params.(*didChangeParams)
+	after, ok2 := next.params.(*didChangeParams)
+	if !ok || !ok2 {
+		return false
+	}
+	if after.ContentChanges[0].Range == nil {
+		*pending = next
+		return true
+	}
+	if len(before.ContentChanges)+len(after.ContentChanges) > 1024 {
+		return false
+	}
+	before.TextDocument.Version = after.TextDocument.Version
+	before.ContentChanges = append(before.ContentChanges, after.ContentChanges...)
 	return true
 }
 func (c *Client) nextJob() (job, bool) {
@@ -381,9 +468,51 @@ func (c *Client) Open(path, lang, contents string, version int) {
 	c.Notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": URI(path), "languageId": lang, "version": version, "text": contents}})
 }
 func (c *Client) Change(path, contents string, version int) {
-	if !c.enqueue(job{method: "textDocument/didChange", changePath: path, params: map[string]any{"textDocument": map[string]any{"uri": URI(path), "version": version}, "contentChanges": []map[string]string{{"text": contents}}}}) && c.ctx.Err() == nil {
+	c.change(path, version, []ContentChange{{Text: contents}})
+}
+func (c *Client) change(path string, version int, changes []ContentChange) {
+	params := &didChangeParams{TextDocument: versionedDocument{URI: URI(path), Version: version}, ContentChanges: changes}
+	if !c.enqueue(job{method: "textDocument/didChange", changePath: path, params: params}) && c.ctx.Err() == nil {
 		c.fail("Language server change queue overflow")
 	}
+}
+
+// OpenBuffer, SyncBuffer and CloseDocument track what the server has seen, so
+// a single edit to that same buffer can be sent as ranges. Anything else, such
+// as a reloaded buffer or a skipped version, falls back to the full text.
+func (c *Client) OpenBuffer(path, lang string, b *text.Buffer) {
+	c.track(path, b)
+	c.Open(path, lang, b.String(), b.Version)
+}
+func (c *Client) SyncBuffer(path string, b *text.Buffer) {
+	previous := c.track(path, b)
+	if previous.buffer == b && b.Version == previous.version {
+		// Unchanged; servers reject a repeated version.
+		return
+	}
+	if c.incremental && previous.buffer == b && b.Version == previous.version+1 {
+		if changes, ok := Changes(b); ok {
+			c.change(path, b.Version, changes)
+			return
+		}
+	}
+	c.Change(path, b.String(), b.Version)
+}
+func (c *Client) CloseDocument(path string) {
+	c.queueMu.Lock()
+	delete(c.synced, path)
+	c.queueMu.Unlock()
+	c.Notify("textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": URI(path)}})
+}
+func (c *Client) track(path string, b *text.Buffer) syncedBuffer {
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	if c.synced == nil {
+		c.synced = map[string]syncedBuffer{}
+	}
+	previous := c.synced[path]
+	c.synced[path] = syncedBuffer{b, b.Version}
+	return previous
 }
 func (c *Client) Close() {
 	c.once.Do(func() {

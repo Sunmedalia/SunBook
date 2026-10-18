@@ -47,6 +47,9 @@ type Buffer struct {
 	index             int
 	Version           int
 	LastEdits         []Edit
+	// LastRemoved[i] is the text LastEdits[i] replaced, so listeners such as
+	// incremental LSP sync can describe a change without the previous snapshot.
+	LastRemoved []string
 }
 
 func New(s string) *Buffer {
@@ -224,6 +227,7 @@ func (b *Buffer) Apply(edits []Edit, before, after []Selection) bool {
 	}
 	b.Version++
 	b.LastEdits = edits
+	b.LastRemoved = removedTexts(t.Backward)
 	t.After = b.snap(after)
 	clear(b.history[b.index:])
 	b.history = append(b.history[:b.index], t)
@@ -235,6 +239,15 @@ func (b *Buffer) Apply(edits []Edit, before, after []Selection) bool {
 	b.index = len(b.history)
 	return true
 }
+
+// A transaction's inverse edits hold exactly the text its edits removed.
+func removedTexts(inverse []Edit) []string {
+	out := make([]string, len(inverse))
+	for i, e := range inverse {
+		out[i] = e.Text
+	}
+	return out
+}
 func boundary(s string, p int) bool { return p == len(s) || utf8.RuneStart(s[p]) }
 func (b *Buffer) CanUndo() bool     { return b.index > 0 }
 func (b *Buffer) CanRedo() bool     { return b.index < len(b.history) }
@@ -244,6 +257,7 @@ func (b *Buffer) Undo() ([]Selection, bool) {
 	}
 	b.index--
 	b.LastEdits = b.history[b.index].Backward
+	b.LastRemoved = removedTexts(b.history[b.index].Forward)
 	return b.restore(b.history[b.index].Before), true
 }
 func (b *Buffer) Redo() ([]Selection, bool) {
@@ -251,6 +265,7 @@ func (b *Buffer) Redo() ([]Selection, bool) {
 		return nil, false
 	}
 	b.LastEdits = b.history[b.index].Forward
+	b.LastRemoved = removedTexts(b.history[b.index].Backward)
 	s := b.restore(b.history[b.index].After)
 	b.index++
 	return s, true

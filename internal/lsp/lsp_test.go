@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,34 +24,48 @@ type stdio struct {
 
 func (stdio) Close() error { return nil }
 
-type fakeServer struct{ contents string }
+type fakeServer struct {
+	contents string
+	ranged   int
+}
 
 func (s *fakeServer) Handle(ctx context.Context, c *jsonrpc2.Conn, r *jsonrpc2.Request) {
 	var result any
 	switch r.Method {
 	case "initialize":
-		result = map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "completionProvider": map[string]any{}, "definitionProvider": true, "documentFormattingProvider": true, "textDocumentSync": 1}}
+		var sync any = 1
+		if os.Getenv("SUNBOOK_LSP_SYNC") == "2" {
+			sync = map[string]any{"openClose": true, "change": 2}
+		}
+		result = map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "completionProvider": map[string]any{}, "definitionProvider": true, "documentFormattingProvider": true, "textDocumentSync": sync}}
 	case "textDocument/didOpen":
 		var p struct {
 			TextDocument struct {
 				URI     string `json:"uri"`
 				Version int    `json:"version"`
+				Text    string `json:"text"`
 			} `json:"textDocument"`
 		}
 		json.Unmarshal(*r.Params, &p)
+		s.contents = p.TextDocument.Text
 		c.Notify(ctx, "textDocument/publishDiagnostics", Diagnostics{URI: p.TextDocument.URI, Version: &p.TextDocument.Version, Diagnostics: []Diagnostic{{Message: "test diagnostic", Range: Range{Start: Position{0, 1}, End: Position{0, 2}}, Severity: 1}}})
 	case "textDocument/didChange":
 		var p struct {
-			ContentChanges []struct {
-				Text string `json:"text"`
-			} `json:"contentChanges"`
+			ContentChanges []ContentChange `json:"contentChanges"`
 		}
 		json.Unmarshal(*r.Params, &p)
-		if len(p.ContentChanges) > 0 {
-			s.contents = p.ContentChanges[0].Text
+		for _, change := range p.ContentChanges {
+			if change.Range == nil {
+				s.contents = change.Text
+				continue
+			}
+			s.ranged++
+			s.contents, _ = applyChange(s.contents, change)
 		}
 	case "test/contents":
 		result = s.contents
+	case "test/ranged":
+		result = s.ranged
 	case "test/notify":
 		c.Notify(ctx, "window/logMessage", map[string]string{"message": "stall"})
 	case "textDocument/completion":
@@ -318,5 +333,274 @@ func verifyRealFeatures(t *testing.T, c *Client, key, path string, diagnostics <
 		case <-deadline:
 			t.Fatal("no diagnostics for missing_symbol")
 		}
+	}
+}
+
+// applyChange applies one ranged change the way a server would, rejecting
+// positions that do not name an exact UTF-16 boundary.
+func applyChange(contents string, change ContentChange) (string, error) {
+	b := text.New(contents)
+	a, z := Offset(b, change.Range.Start), Offset(b, change.Range.End)
+	if At(b, a) != change.Range.Start || At(b, z) != change.Range.End || z < a {
+		return contents, fmt.Errorf("inexact range %+v in %q", change.Range, contents)
+	}
+	return contents[:a] + change.Text + contents[z:], nil
+}
+
+func randomEdits(rng *rand.Rand, s string) []text.Edit {
+	pieces := []string{"", "x", "\n", "中文", "😀", "é", "a\nb", "🎉\n🎉", "\n\n"}
+	var offsets []int
+	for i := range s {
+		offsets = append(offsets, i)
+	}
+	offsets = append(offsets, len(s))
+	var edits []text.Edit
+	at := 0
+	for range 1 + rng.IntN(4) {
+		// Non-overlapping ranges with distinct starts, as Buffer.Apply requires.
+		i := at + rng.IntN(max(1, len(offsets)-at))
+		if i >= len(offsets) {
+			break
+		}
+		j := min(len(offsets)-1, i+rng.IntN(4))
+		edits = append(edits, text.Edit{Start: offsets[i], End: offsets[j], Text: pieces[rng.IntN(len(pieces))]})
+		at = j + 1
+	}
+	return edits
+}
+
+func TestChangesReplayEditsUndoAndRedo(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	for seed := range 200 {
+		b := text.New("a😀b\n中文 é\n\nlast")
+		for step := range 40 {
+			before := b.String()
+			switch r := rng.IntN(10); {
+			case r < 6:
+				if !b.Apply(randomEdits(rng, before), nil, nil) {
+					continue
+				}
+			case r < 8:
+				if _, ok := b.Undo(); !ok {
+					continue
+				}
+			default:
+				if _, ok := b.Redo(); !ok {
+					continue
+				}
+			}
+			changes, ok := Changes(b)
+			if !ok {
+				t.Fatal("no changes for an edit")
+			}
+			got := before
+			for _, change := range changes {
+				var err error
+				if got, err = applyChange(got, change); err != nil {
+					t.Fatalf("seed %d step %d: %v", seed, step, err)
+				}
+			}
+			if got != b.String() {
+				t.Fatalf("seed %d step %d: replay %q, buffer %q, changes %+v", seed, step, got, b.String(), changes)
+			}
+		}
+	}
+}
+
+func TestRangeChangesMergeAndFullTextReplaces(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := &Client{ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+	ranged := func(version int, s string) {
+		c.change("a", version, []ContentChange{{Range: &Range{}, Text: s}})
+	}
+	ranged(2, "x")
+	ranged(3, "y")
+	pending := c.jobs[0].params.(*didChangeParams)
+	if len(c.jobs) != 1 || pending.TextDocument.Version != 3 || len(pending.ContentChanges) != 2 || pending.ContentChanges[1].Text != "y" {
+		t.Fatal("range changes were not appended", pending)
+	}
+	c.Change("a", "full", 4)
+	ranged(5, "z")
+	pending = c.jobs[0].params.(*didChangeParams)
+	if len(c.jobs) != 1 || pending.TextDocument.Version != 5 || len(pending.ContentChanges) != 2 || pending.ContentChanges[0].Range != nil || pending.ContentChanges[0].Text != "full" {
+		t.Fatal("full text did not replace pending ranges", pending)
+	}
+	ranged(6, "other")
+	c.jobs[0].changePath = "b"
+	ranged(7, "split")
+	if len(c.jobs) != 2 {
+		t.Fatal("changes merged across documents")
+	}
+}
+
+func TestIncrementalSyncKeepsServerInStep(t *testing.T) {
+	t.Setenv("SUNBOOK_LSP_SYNC", "2")
+	c := helperClient(t, func(string) {})
+	if !c.incremental {
+		t.Fatal("options-form textDocumentSync change kind was not detected")
+	}
+	request := func(method string, out any) {
+		t.Helper()
+		done := make(chan error, 1)
+		c.Request(context.Background(), method, nil, func(raw json.RawMessage, err error) {
+			if err == nil {
+				err = json.Unmarshal(raw, out)
+			}
+			done <- err
+		})
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	rng := rand.New(rand.NewPCG(3, 4))
+	path := "/tmp/incremental.go"
+	b := text.New("package main\n// 中文 😀\n")
+	c.OpenBuffer(path, "go", b)
+	for range 300 {
+		if rng.IntN(5) == 0 {
+			b.Undo()
+		} else {
+			b.Apply(randomEdits(rng, b.String()), nil, nil)
+		}
+		c.SyncBuffer(path, b)
+	}
+	var contents string
+	var ranged int
+	request("test/contents", &contents)
+	request("test/ranged", &ranged)
+	if contents != b.String() || ranged == 0 {
+		t.Fatalf("server drifted (ranged %d): %q != %q", ranged, contents, b.String())
+	}
+	// A reloaded document is a new buffer; it must resend its full text.
+	reloaded := text.New("reloaded\n")
+	reloaded.Version = b.Version + 1
+	c.SyncBuffer(path, reloaded)
+	reloaded.Apply([]text.Edit{{Start: 0, End: 0, Text: "// "}}, nil, nil)
+	c.SyncBuffer(path, reloaded)
+	request("test/contents", &contents)
+	if contents != "// reloaded\n" {
+		t.Fatalf("reload was not sent in full: %q", contents)
+	}
+}
+
+// Optional: after random edits, undo and multi-cursor renames sent as ranges,
+// each server must report the same symbols as a fresh full-text open.
+func TestRealServersIncrementalSync(t *testing.T) {
+	if os.Getenv("SUNBOOK_LSP_INTEGRATION") != "1" {
+		t.Skip("set SUNBOOK_LSP_INTEGRATION=1 with language servers installed")
+	}
+	for _, tc := range []struct{ key, name, source, function string }{
+		{"go", "main.go", "package main\n\n// 中文 😀\nfunc main() {}\n", "func f%d() { _ = \"😀 中文 é\" }\n"},
+		{"python", "main.py", "# 中文 😀\ndef main():\n    pass\n", "def f%d():  # 😀 中文\n    return 'é'\n"},
+		{"typescript", "main.ts", "// 中文 😀\nfunction main() {}\n", "function f%d() { return '😀 中文 é'; }\n"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			server := config.Default().Servers[tc.key]
+			if _, err := exec.LookPath(server.Command); err != nil {
+				t.Skip(server.Command, " is not installed")
+			}
+			root := t.TempDir()
+			os.WriteFile(root+"/go.mod", []byte("module example.invalid/test\n\ngo 1.26\n"), 0644)
+			path := root + "/" + tc.name
+			os.WriteFile(path, []byte(tc.source), 0644)
+			start := func() *Client {
+				c, e := Start(context.Background(), root, server, func(Diagnostics) {}, func(string) {})
+				if e != nil {
+					t.Fatal(e)
+				}
+				t.Cleanup(c.Close)
+				return c
+			}
+			symbols := func(c *Client) string {
+				t.Helper()
+				for range 75 {
+					done := make(chan string, 1)
+					c.Request(context.Background(), "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": URI(path)}}, func(raw json.RawMessage, err error) {
+						var v any
+						if err != nil || json.Unmarshal(raw, &v) != nil || v == nil || len(raw) <= 2 {
+							done <- ""
+							return
+						}
+						out, _ := json.Marshal(v)
+						done <- string(out)
+					})
+					if s := <-done; s != "" {
+						return s
+					}
+					time.Sleep(200 * time.Millisecond)
+				}
+				t.Fatal("no document symbols")
+				return ""
+			}
+			c := start()
+			if !c.incremental {
+				t.Skip(server.Command, " does not request incremental sync")
+			}
+			_, lang := config.Language(path)
+			b := text.New(tc.source)
+			c.OpenBuffer(path, lang, b)
+			rng := rand.New(rand.NewPCG(5, 6))
+			for range 300 {
+				changed := false
+				if rng.IntN(4) == 0 {
+					_, changed = b.Undo()
+				} else {
+					changed = b.Apply(randomEdits(rng, b.String()), nil, nil)
+				}
+				if changed {
+					c.SyncBuffer(path, b)
+				}
+			}
+			for {
+				if _, ok := b.Undo(); !ok {
+					break
+				}
+				c.SyncBuffer(path, b)
+			}
+			for i := range 20 {
+				end := b.Len()
+				b.Apply([]text.Edit{{Start: end, End: end, Text: fmt.Sprintf(tc.function, i)}}, nil, nil)
+				c.SyncBuffer(path, b)
+			}
+			var renames []text.Edit
+			for _, i := range []int{3, 7, 11} {
+				name := fmt.Sprintf("f%d(", i)
+				at := strings.Index(b.String(), name)
+				renames = append(renames, text.Edit{Start: at, End: at + len(name) - 1, Text: "renamed_中文_" + name[:len(name)-1]})
+			}
+			if !b.Apply(renames, nil, nil) {
+				t.Fatal("rename edits")
+			}
+			c.SyncBuffer(path, b)
+			got := symbols(c)
+			fresh := start()
+			fresh.Open(path, lang, b.String(), 1)
+			if want := symbols(fresh); got != want || !strings.Contains(got, "renamed_中文_f7") {
+				t.Fatalf("incremental document drifted\ngot  %s\nwant %s", got, want)
+			}
+		})
+	}
+}
+
+func TestSyncBufferSkipsUnchangedVersions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := &Client{ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1)}
+	b := text.New("x")
+	c.OpenBuffer("a", "go", b)
+	c.SyncBuffer("a", b)
+	if len(c.jobs) != 1 {
+		t.Fatal("unchanged buffer resent with a repeated version", len(c.jobs))
+	}
+	b.Apply([]text.Edit{{Start: 1, End: 1, Text: "y"}}, nil, nil)
+	c.SyncBuffer("a", b)
+	// Without incremental support the server still receives the full text.
+	if len(c.jobs) != 2 || c.jobs[1].params.(*didChangeParams).ContentChanges[0].Text != "xy" {
+		t.Fatal("full-text fallback", c.jobs)
+	}
+	c.CloseDocument("a")
+	if len(c.synced) != 0 {
+		t.Fatal("closed document still retains its buffer")
 	}
 }

@@ -166,7 +166,7 @@ func (a *App) startLanguage(d *editor.Document) {
 	}
 	if c := a.clients[key]; c != nil {
 		if a.opened[d] != c {
-			c.Open(d.Path, lang, d.Buffer.String(), d.Buffer.Version)
+			c.OpenBuffer(d.Path, lang, d.Buffer)
 			a.opened[d] = c
 		}
 		return

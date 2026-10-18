@@ -731,7 +731,7 @@ func (a *App) renameFile() {
 				return
 			}
 			if c := a.opened[d]; c != nil {
-				c.Notify("textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": lsp.URI(old)}})
+				c.CloseDocument(old)
 				delete(a.opened, d)
 			}
 			delete(a.diagnostics, lsp.URI(old))
