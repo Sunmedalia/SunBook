@@ -153,3 +153,40 @@ func TestLocalTrackingCountsDetachedAndConflicts(t *testing.T) {
 		t.Fatal("conflict status", s, e)
 	}
 }
+
+func TestStatusGoneUpstreamAndConflictOrder(t *testing.T) {
+	ctx, dir := repository(t)
+	writeFile(t, dir, "b.txt", "base\n")
+	StageAll(ctx, dir)
+	Commit(ctx, dir, "base")
+	base := mustRun(t, ctx, dir, "rev-parse", "HEAD")
+	mustRun(t, ctx, dir, "remote", "add", "origin", t.TempDir())
+	mustRun(t, ctx, dir, "update-ref", "refs/remotes/origin/main", base)
+	mustRun(t, ctx, dir, "branch", "--set-upstream-to=origin/main", "main")
+	mustRun(t, ctx, dir, "update-ref", "-d", "refs/remotes/origin/main")
+	s, e := ReadStatus(ctx, dir)
+	if e != nil || s.Upstream != "" || s.Head != base || s.Branch != "main" || s.Detached {
+		t.Fatal("gone upstream", s, e)
+	}
+	mustRun(t, ctx, dir, "checkout", "-q", "-b", "other")
+	writeFile(t, dir, "b.txt", "other\n")
+	mustRun(t, ctx, dir, "commit", "-q", "-am", "other")
+	mustRun(t, ctx, dir, "checkout", "-q", "main")
+	writeFile(t, dir, "b.txt", "main\n")
+	mustRun(t, ctx, dir, "commit", "-q", "-am", "main")
+	if _, e := Run(ctx, dir, "merge", "--no-edit", "other"); e == nil {
+		t.Fatal("fixture did not conflict")
+	}
+	writeFile(t, dir, "c.txt", "c\n")
+	writeFile(t, dir, "a.txt", "a\n")
+	mustRun(t, ctx, dir, "add", "--", "c.txt", "a.txt")
+	writeFile(t, dir, "untracked.txt", "u\n")
+	s, e = ReadStatus(ctx, dir)
+	var got []string
+	for _, f := range s.Files {
+		got = append(got, f.Index+f.Worktree+" "+f.Path)
+	}
+	if e != nil || strings.Join(got, ",") != "A  a.txt,UU b.txt,A  c.txt,?? untracked.txt" {
+		t.Fatal("status order", got, e)
+	}
+}

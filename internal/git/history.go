@@ -17,29 +17,53 @@ func CommitFiles(ctx context.Context, root, hash string) ([]CommitFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	parts := strings.Split(out, "\x00")
+	files, _, err := parseNameStatus(strings.Split(out, "\x00"), 0, hash)
+	return files, err
+}
+
+// Parse NUL-delimited --name-status entries from parts[i:] until a token that
+// is not a status letter, such as the next commit hash in git log output.
+func parseNameStatus(parts []string, i int, hash string) ([]CommitFile, int, error) {
 	var files []CommitFile
-	for i := 0; i < len(parts); {
+	for i < len(parts) {
 		status := strings.TrimLeft(parts[i], "\n")
-		i++
 		if status == "" {
+			i++
 			continue
 		}
+		if !isNameStatus(status) {
+			break
+		}
+		i++
 		if i >= len(parts) || parts[i] == "" {
-			return nil, fmt.Errorf("invalid changed-file list for commit %s", hash)
+			return nil, i, fmt.Errorf("invalid changed-file list for commit %s", hash)
 		}
 		file := CommitFile{Status: status[:1], Path: parts[i]}
 		i++
 		if file.Status == "R" || file.Status == "C" {
 			if i >= len(parts) || parts[i] == "" {
-				return nil, fmt.Errorf("invalid rename in commit %s", hash)
+				return nil, i, fmt.Errorf("invalid rename in commit %s", hash)
 			}
 			file.OldPath, file.Path = file.Path, parts[i]
 			i++
 		}
 		files = append(files, file)
 	}
-	return files, nil
+	return files, i, nil
+}
+
+// Status letters are uppercase and may carry a similarity score; commit hashes
+// are lowercase hexadecimal, so the two never collide.
+func isNameStatus(s string) bool {
+	if !strings.ContainsRune("ACDMRTUXB", rune(s[0])) {
+		return false
+	}
+	for _, c := range s[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func CompareRevision(ctx context.Context, root, hash string, file CommitFile) (Comparison, error) {

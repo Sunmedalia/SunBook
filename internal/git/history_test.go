@@ -3,6 +3,7 @@ package git
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -100,5 +101,52 @@ func TestMergeRevisionUsesFirstParent(t *testing.T) {
 	pair, err := CompareRevision(ctx, dir, hash, files[0])
 	if err != nil || pair.Old != "" || pair.New != "feature\n" {
 		t.Fatal("merge snapshot", pair, err)
+	}
+}
+
+func TestLogReadsFileListsInOneCommand(t *testing.T) {
+	ctx, dir := repository(t)
+	// Names that look like status letters or hashes must stay paths.
+	names := []string{"M", "R100", "0123456789abcdef0123456789abcdef01234567", "\nnewline.txt", "tracked.txt"}
+	for _, name := range names {
+		writeFile(t, dir, name, "base\nline two\nline three\n")
+	}
+	StageAll(ctx, dir)
+	Commit(ctx, dir, "root")
+	mustRun(t, ctx, dir, "commit", "-q", "--allow-empty", "-m", "empty")
+	mustRun(t, ctx, dir, "checkout", "-q", "-b", "feature")
+	writeFile(t, dir, "feature.txt", "feature\n")
+	StageAll(ctx, dir)
+	Commit(ctx, dir, "feature")
+	mustRun(t, ctx, dir, "checkout", "-q", "main")
+	mustRun(t, ctx, dir, "mv", "--", "tracked.txt", "moved.txt")
+	writeFile(t, dir, "M", "changed\n")
+	StageAll(ctx, dir)
+	Commit(ctx, dir, "move")
+	mustRun(t, ctx, dir, "merge", "-q", "--no-ff", "-m", "merge", "feature")
+	log, err := Log(ctx, dir, "")
+	if err != nil || len(log) != 5 {
+		t.Fatal("log", log, err)
+	}
+	counts := map[string]int{}
+	for _, revision := range log {
+		counts[revision.Subject] = len(revision.Files)
+	}
+	if counts["merge"] != 1 || counts["move"] != 2 || counts["feature"] != 1 || counts["empty"] != 0 || counts["root"] != len(names) {
+		t.Fatal("per-commit file lists", counts)
+	}
+	for _, revision := range log {
+		want, err := CommitFiles(ctx, dir, revision.Hash)
+		if err != nil || !reflect.DeepEqual(want, revision.Files) {
+			t.Fatal("log files differ from commit view", revision, want, err)
+		}
+	}
+	// File history follows the rename but still lists every changed file.
+	history, err := Log(ctx, dir, "moved.txt")
+	if err != nil || len(history) != 2 || history[0].Subject != "move" || len(history[0].Files) != 2 || len(history[1].Files) != len(names) {
+		t.Fatal("file history", history, err)
+	}
+	if missing, err := Log(ctx, dir, "missing.txt"); err != nil || len(missing) != 0 {
+		t.Fatal("missing file history", missing, err)
 	}
 }

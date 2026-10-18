@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -49,53 +50,104 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// One porcelain v2 status reports the branch, upstream counts and files, so
+// periodic refreshes start two Git processes instead of six.
 func ReadStatus(ctx context.Context, dir string) (Status, error) {
 	root, err := Run(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return Status{}, err
 	}
 	s := Status{Root: strings.TrimSpace(root)}
-	branch, err := Run(ctx, s.Root, "symbolic-ref", "--quiet", "--short", "HEAD")
-	if err != nil {
-		branch, _ = Run(ctx, s.Root, "rev-parse", "--short", "HEAD")
-		s.Detached = true
-	}
-	s.Branch = strings.TrimSpace(branch)
-	head, headErr := Run(ctx, s.Root, "rev-parse", "--verify", "HEAD")
-	if headErr == nil {
-		s.Head = strings.TrimSpace(head)
-	}
-	s.HasCommits = headErr == nil
-	if upstream, e := Run(ctx, s.Root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); e == nil {
-		s.Upstream = strings.TrimSpace(upstream)
-		if counts, e := Run(ctx, s.Root, "rev-list", "--left-right", "--count", "HEAD...@{upstream}"); e == nil {
-			parts := strings.Fields(counts)
-			if len(parts) == 2 {
-				s.Ahead, _ = strconv.Atoi(parts[0])
-				s.Behind, _ = strconv.Atoi(parts[1])
-			}
-		}
-	}
-	raw, err := Run(ctx, s.Root, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	raw, err := Run(ctx, s.Root, "--no-optional-locks", "status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--untracked-files=all")
 	if err != nil {
 		return s, err
 	}
+	upstream := ""
 	parts := strings.Split(raw, "\x00")
 	for i := 0; i < len(parts); i++ {
 		p := parts[i]
-		if len(p) < 4 {
+		if header, ok := strings.CutPrefix(p, "# "); ok {
+			key, value, _ := strings.Cut(header, " ")
+			switch key {
+			case "branch.oid":
+				if value != "(initial)" {
+					s.Head, s.HasCommits = value, true
+				}
+			case "branch.head":
+				s.Branch, s.Detached = value, value == "(detached)"
+			case "branch.upstream":
+				upstream = value
+			case "branch.ab":
+				// Git omits counts when the configured upstream ref is gone.
+				s.Upstream = upstream
+				if fields := strings.Fields(value); len(fields) == 2 {
+					s.Ahead, _ = strconv.Atoi(strings.TrimPrefix(fields[0], "+"))
+					s.Behind, _ = strconv.Atoi(strings.TrimPrefix(fields[1], "-"))
+				}
+			}
 			continue
 		}
-		f := File{Index: p[:1], Worktree: p[1:2], Path: p[3:]}
-		if f.Index == "R" || f.Index == "C" || f.Worktree == "R" || f.Worktree == "C" {
+		var f File
+		switch {
+		case strings.HasPrefix(p, "? "):
+			f = File{Index: "?", Worktree: "?", Path: p[2:]}
+		case strings.HasPrefix(p, "1 "):
+			fields := strings.SplitN(p, " ", 9)
+			if len(fields) != 9 {
+				continue
+			}
+			f = statusFile(fields[1], fields[8])
+		case strings.HasPrefix(p, "2 "):
+			fields := strings.SplitN(p, " ", 10)
+			if len(fields) != 10 {
+				continue
+			}
+			f = statusFile(fields[1], fields[9])
 			if i+1 < len(parts) {
 				i++
 				f.OldPath = parts[i]
 			}
+		case strings.HasPrefix(p, "u "):
+			fields := strings.SplitN(p, " ", 11)
+			if len(fields) != 11 {
+				continue
+			}
+			f = statusFile(fields[1], fields[10])
+		default:
+			continue
 		}
 		s.Files = append(s.Files, f)
 	}
+	// v2 lists conflicts after ordinary changes; keep v1's single path order.
+	sort.SliceStable(s.Files, func(i, j int) bool {
+		a, b := s.Files[i], s.Files[j]
+		if a.Untracked() != b.Untracked() {
+			return b.Untracked()
+		}
+		return !a.Untracked() && a.Path < b.Path
+	})
+	if s.Detached {
+		s.Branch = ""
+		if short, e := Run(ctx, s.Root, "rev-parse", "--short", "HEAD"); e == nil {
+			s.Branch = strings.TrimSpace(short)
+		}
+	}
 	return s, nil
+}
+
+// Porcelain v2 marks an unchanged side with "." where v1 used a space.
+func statusFile(xy, path string) File {
+	if len(xy) != 2 {
+		xy = "  "
+	}
+	side := func(c byte) string {
+		if c == '.' {
+			return " "
+		}
+		return string(c)
+	}
+	return File{Index: side(xy[0]), Worktree: side(xy[1]), Path: path}
 }
 func Stage(ctx context.Context, root, path string) error {
 	_, e := Run(ctx, root, "add", "--", path)
@@ -171,29 +223,46 @@ func Diff(ctx context.Context, root string, f File, staged bool) (string, error)
 	}
 	return Run(ctx, root, args...)
 }
+
+// Read the history and every commit's changed files with one git log. File
+// history first lists the followed commits, since --follow would otherwise
+// limit each file list to the followed path.
 func Log(ctx context.Context, root, path string) ([]Revision, error) {
-	args := []string{"log", "-40", "--format=%H%x00%an%x00%ar%x00%s"}
-	if path != "" {
-		args = append(args, "--follow")
-	}
-	args = append(args, "--")
-	if path != "" {
-		args = append(args, path)
+	args := []string{"log", "--format=%H%x00%an%x00%ar%x00%s", "-z", "--name-status", "--root", "--find-renames", "--no-ext-diff", "--no-textconv", "--diff-merges=first-parent"}
+	if path == "" {
+		args = append(args, "-40", "--")
+	} else {
+		hashes, e := Run(ctx, root, "log", "-40", "--format=%H", "--follow", "--", path)
+		if e != nil {
+			return nil, e
+		}
+		if strings.TrimSpace(hashes) == "" {
+			return nil, nil
+		}
+		args = append(append(args, "--no-walk=unsorted"), strings.Fields(hashes)...)
+		args = append(args, "--")
 	}
 	out, e := Run(ctx, root, args...)
 	if e != nil {
 		return nil, e
 	}
+	parts := strings.Split(out, "\x00")
 	var result []Revision
-	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
-		fields := strings.SplitN(line, "\x00", 4)
-		if len(fields) == 4 {
-			files, err := CommitFiles(ctx, root, fields[0])
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, Revision{Hash: fields[0], Author: fields[1], Age: fields[2], Subject: fields[3], Files: files})
+	for i := 0; i < len(parts); {
+		if strings.TrimLeft(parts[i], "\n") == "" {
+			i++
+			continue
 		}
+		if i+4 > len(parts) {
+			return nil, errors.New("invalid git log output")
+		}
+		revision := Revision{Hash: strings.TrimLeft(parts[i], "\n"), Author: parts[i+1], Age: parts[i+2], Subject: parts[i+3]}
+		files, next, err := parseNameStatus(parts, i+4, revision.Hash)
+		if err != nil {
+			return nil, err
+		}
+		revision.Files, i = files, next
+		result = append(result, revision)
 	}
 	return result, nil
 }
