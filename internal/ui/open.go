@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"container/heap"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ type openEntry struct {
 type openPicker struct {
 	Quick                    bool
 	Dir, ReadDir, Error      string
-	Paths                    []string
+	Index                    fileIndex
 	Entries                  []openEntry
 	Loading                  bool
 	Seq                      int
@@ -32,7 +33,7 @@ type openPicker struct {
 func (a *App) quickOpen() {
 	m := a.openModal(true)
 	if a.treeIndexReady {
-		m.Open.Paths = a.treeFiles
+		m.Open.Index = a.treeFiles
 		a.updateOpenModal(m)
 	} else {
 		m.Open.Loading = true
@@ -84,13 +85,31 @@ func openPath(base, path string) string {
 }
 func fileRank(path, query string) (int, bool) {
 	path = strings.ToLower(filepath.ToSlash(path))
-	query = strings.ToLower(strings.TrimSpace(query))
-	if query == "" {
+	return newFileRanker(query).rank(path, filepath.Base(path))
+}
+
+// fileRanker prepares a query once so ranking many paths repeats no work.
+type fileRanker struct {
+	words  []string
+	needle [][]rune
+}
+
+func newFileRanker(query string) fileRanker {
+	var f fileRanker
+	f.words = strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+	for _, word := range f.words {
+		f.needle = append(f.needle, []rune(word))
+	}
+	return f
+}
+
+// rank scores a lower-case, slash-separated path and its filepath.Base.
+func (f fileRanker) rank(path, base string) (int, bool) {
+	if len(f.words) == 0 {
 		return 0, true
 	}
-	base := filepath.Base(path)
 	score := 0
-	for _, word := range strings.Fields(query) {
+	for w, word := range f.words {
 		switch {
 		case base == word:
 			score += 10000
@@ -101,30 +120,73 @@ func fileRank(path, query string) (int, bool) {
 		case strings.Contains(path, word):
 			score += 4000
 		default:
-			hay, needle := []rune(path), []rune(word)
+			needle := f.needle[w]
 			j, previous := 0, -2
 			part := 0
-			for i, r := range hay {
+			i, before := 0, rune(0)
+			for _, r := range path {
 				if j < len(needle) && r == needle[j] {
 					part += 20
 					if i == previous+1 {
 						part += 30
 					}
-					if i == 0 || strings.ContainsRune("/_-. ", hay[max(0, i-1)]) {
+					if i == 0 || strings.ContainsRune("/_-. ", before) {
 						part += 20
 					}
 					previous = i
 					j++
 				}
+				before = r
+				i++
 			}
 			if j != len(needle) {
 				return 0, false
 			}
-			score += 1000 + part - len(hay)
+			score += 1000 + part - i
 		}
 	}
 	return score, true
 }
+
+type rankedFile struct {
+	path, rel string
+	score     int
+}
+
+// rankedFiles keeps the best files, highest score first and then by path.
+// Paths are unique, so this order is total and the kept set is exact.
+type rankedFiles []rankedFile
+
+func rankedBefore(x, y rankedFile) bool {
+	if x.score != y.score {
+		return x.score > y.score
+	}
+	return x.path < y.path
+}
+func (h rankedFiles) Len() int           { return len(h) }
+func (h rankedFiles) Less(i, j int) bool { return rankedBefore(h[j], h[i]) } // worst on top
+func (h rankedFiles) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *rankedFiles) Push(x any)        { *h = append(*h, x.(rankedFile)) }
+func (h *rankedFiles) Pop() any {
+	old := *h
+	x := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return x
+}
+func (h *rankedFiles) offer(f rankedFile, limit int) {
+	if h.Len() < limit {
+		heap.Push(h, f)
+	} else if rankedBefore(f, (*h)[0]) {
+		(*h)[0] = f
+		heap.Fix(h, 0)
+	}
+}
+func (h rankedFiles) sorted() []rankedFile {
+	out := append([]rankedFile(nil), h...)
+	sort.Slice(out, func(i, j int) bool { return rankedBefore(out[i], out[j]) })
+	return out
+}
+
 func (a *App) updateOpenModal(m *modal) {
 	if a.modal != m || m.Open == nil {
 		return
@@ -133,61 +195,78 @@ func (a *App) updateOpenModal(m *modal) {
 	query, _, _ := splitOpenLocation(strings.TrimSpace(m.Input))
 	if s.Quick {
 		m.Subtitle = "Recent files and workspace · " + a.root
-		paths := append([]string(nil), a.recentFiles...)
+		// Recent and open files come first; the index supplies precomputed
+		// relative and lower-case paths for everything else.
+		var extra []string
+		extra = append(extra, a.recentFiles...)
 		for _, d := range a.docs {
 			if d.Path != "" {
-				paths = append(paths, d.Path)
+				extra = append(extra, d.Path)
 			}
 		}
-		paths = append(paths, s.Paths...)
-		for _, path := range paths {
+		index := s.Index
+		exact := func(path, rel, name string) bool {
+			return m.Input == rel || m.Input == name || m.Input == path
+		}
+		matched := false
+		for _, path := range extra {
 			rel, _ := filepath.Rel(a.root, path)
-			if m.Input == rel || m.Input == filepath.Base(path) || m.Input == path {
-				query = m.Input
+			if exact(path, rel, filepath.Base(path)) {
+				matched = true
 				break
 			}
 		}
-		type candidate struct {
-			item
-			score int
+		for i := 0; !matched && i < len(index.Paths); i++ {
+			matched = exact(index.Paths[i], index.Rel[i], index.Names[i])
 		}
-		var ranked []candidate
-		seen := map[string]bool{}
-		for _, path := range paths {
+		if matched {
+			query = m.Input
+		}
+		recent := make(map[string]int, len(a.recentFiles))
+		for i, path := range a.recentFiles {
+			if _, ok := recent[path]; !ok {
+				recent[path] = i
+			}
+		}
+		ranker := newFileRanker(query)
+		top := &rankedFiles{}
+		seen := make(map[string]bool, len(extra))
+		consider := func(path, rel, key, base string) {
+			score, ok := ranker.rank(key, base)
+			if !ok {
+				return
+			}
+			if i, ok := recent[path]; ok {
+				score += max(1, 100-i)
+			}
+			top.offer(rankedFile{path, rel, score}, 200)
+		}
+		for _, path := range extra {
 			if seen[path] {
 				continue
 			}
 			seen[path] = true
 			rel, _ := filepath.Rel(a.root, path)
-			score, ok := fileRank(rel, query)
-			if !ok {
+			key := strings.ToLower(filepath.ToSlash(rel))
+			consider(path, rel, key, filepath.Base(key))
+		}
+		for i, path := range index.Paths {
+			if seen[path] || i > 0 && index.Paths[i-1] == path {
 				continue
 			}
-			detail := filepath.ToSlash(filepath.Dir(rel))
+			consider(path, index.Rel[i], index.Keys[i], index.Bases[i])
+		}
+		best := top.sorted()
+		m.Visible = nil
+		for _, r := range best {
+			detail := filepath.ToSlash(filepath.Dir(r.rel))
 			if detail == "." {
 				detail = "workspace"
 			}
-			for i, recent := range a.recentFiles {
-				if recent == path {
-					score += max(1, 100-i)
-					detail = "recent · " + detail
-					break
-				}
+			if _, ok := recent[r.path]; ok {
+				detail = "recent · " + detail
 			}
-			ranked = append(ranked, candidate{item: item{Label: filepath.Base(path), Detail: detail, Path: path}, score: score})
-		}
-		sort.SliceStable(ranked, func(i, j int) bool {
-			if ranked[i].score != ranked[j].score {
-				return ranked[i].score > ranked[j].score
-			}
-			return ranked[i].Path < ranked[j].Path
-		})
-		m.Visible = nil
-		for i, r := range ranked {
-			if i >= 200 {
-				break
-			}
-			m.Visible = append(m.Visible, r.item)
+			m.Visible = append(m.Visible, item{Label: filepath.Base(r.path), Detail: detail, Path: r.path})
 		}
 		m.Empty = "No matching files"
 		if s.Loading {
@@ -211,21 +290,32 @@ func (a *App) updateOpenModal(m *modal) {
 			return
 		}
 		m.Visible = nil
+		ranker := newFileRanker(leaf)
+		rank := func(name string) (int, bool) {
+			name = strings.ToLower(filepath.ToSlash(name))
+			return ranker.rank(name, filepath.Base(name))
+		}
+		var scores []int
 		for _, entry := range s.Entries {
-			if _, ok := fileRank(entry.Name, leaf); !ok {
+			if _, ok := rank(entry.Name); !ok {
 				continue
 			}
 			label, detail := entry.Name, "file"
 			if entry.Dir {
 				detail = "folder"
 			}
+			score, _ := rank(filepath.Base(entry.Path))
 			m.Visible = append(m.Visible, item{Label: label, Detail: detail, Path: entry.Path, Dir: entry.Dir})
+			scores = append(scores, score)
 		}
-		sort.SliceStable(m.Visible, func(i, j int) bool {
-			x, y := m.Visible[i], m.Visible[j]
-			xs, _ := fileRank(filepath.Base(x.Path), leaf)
-			ys, _ := fileRank(filepath.Base(y.Path), leaf)
-			if leaf != "" && xs != ys {
+		// Rank each entry once instead of twice per comparison.
+		order := make([]int, len(m.Visible))
+		for i := range order {
+			order[i] = i
+		}
+		sort.SliceStable(order, func(i, j int) bool {
+			x, y := m.Visible[order[i]], m.Visible[order[j]]
+			if xs, ys := scores[order[i]], scores[order[j]]; leaf != "" && xs != ys {
 				return xs > ys
 			}
 			if x.Dir != y.Dir {
@@ -233,6 +323,13 @@ func (a *App) updateOpenModal(m *modal) {
 			}
 			return x.Path < y.Path
 		})
+		if len(order) > 0 {
+			sorted := make([]item, len(order))
+			for i, k := range order {
+				sorted[i] = m.Visible[k]
+			}
+			m.Visible = sorted
+		}
 		m.Empty = "Folder is empty"
 		if s.Loading {
 			m.Empty = "Reading folder…"

@@ -84,16 +84,7 @@ func (a *App) applyTreeFilter() {
 	} else {
 		a.tree = nil
 		if a.treeIndexReady {
-			for _, path := range a.treeFiles {
-				rel, e := filepath.Rel(a.root, path)
-				if e != nil {
-					continue
-				}
-				rel = filepath.ToSlash(rel)
-				if fuzzy(rel, query) {
-					a.tree = append(a.tree, treeEntry{Path: path, Name: rel})
-				}
-			}
+			a.tree = a.filterTreeIndex(strings.ToLower(query))
 		} else {
 			for _, e := range a.treeAll {
 				if !e.Dir {
@@ -154,6 +145,7 @@ func (a *App) loadTreeIndex() {
 		defer cancel()
 		files, err := workspaceFiles(ctx, root)
 		sort.Strings(files)
+		index := newFileIndex(root, files)
 		a.post(func() {
 			if seq != a.treeIndexSeq || root != a.root {
 				return
@@ -161,7 +153,7 @@ func (a *App) loadTreeIndex() {
 			a.treeIndexLoading = false
 			if m := a.modal; m != nil && m.Open != nil && m.Open.Quick {
 				m.Open.Loading = false
-				m.Open.Paths = files
+				m.Open.Index = index
 				if err != nil {
 					m.Open.Error = err.Error()
 				}
@@ -171,11 +163,76 @@ func (a *App) loadTreeIndex() {
 				a.showError(err)
 				return
 			}
-			a.treeFiles = files
-			a.treeIndexReady = true
+			a.setTreeIndex(index)
 			a.applyTreeFilter()
 		})
 	}()
+}
+
+// fileIndex holds the workspace files with their relative forms computed once,
+// off the UI thread, for Explorer filtering and Quick Open ranking.
+type fileIndex struct {
+	Paths []string // absolute and sorted
+	Rel   []string // filepath.Rel from the root; empty if that failed
+	Keys  []string // Rel lower-cased with forward slashes
+	Names []string // filepath.Base of Paths
+	Bases []string // filepath.Base of Keys
+}
+
+func newFileIndex(root string, paths []string) fileIndex {
+	n := len(paths)
+	index := fileIndex{Paths: paths, Rel: make([]string, n), Keys: make([]string, n), Names: make([]string, n), Bases: make([]string, n)}
+	for i, path := range paths {
+		if rel, err := filepath.Rel(root, path); err == nil {
+			index.Rel[i] = rel
+			index.Keys[i] = strings.ToLower(filepath.ToSlash(rel))
+		}
+		index.Names[i] = filepath.Base(path)
+		index.Bases[i] = filepath.Base(index.Keys[i])
+	}
+	return index
+}
+
+func (a *App) setTreeIndex(index fileIndex) {
+	a.treeFiles = index
+	a.treeIndexReady = true
+	a.treeMatchQuery, a.treeMatches = "", nil
+}
+
+// filterTreeIndex matches a lower-case query against the index. Extending the
+// previous query can only remove matches (a fuzzy match of the longer query
+// is a subsequence match of its prefix), so typing narrows the last result.
+func (a *App) filterTreeIndex(needle string) []treeEntry {
+	index := a.treeFiles
+	candidates := a.treeMatches
+	full := a.treeMatchQuery == "" || !strings.HasPrefix(needle, a.treeMatchQuery)
+	if full {
+		candidates = nil
+	}
+	var matches []int
+	check := func(i int) {
+		if index.Rel[i] != "" && fuzzyLower(index.Keys[i], needle) {
+			matches = append(matches, i)
+		}
+	}
+	if full {
+		for i := range index.Paths {
+			check(i)
+		}
+	} else {
+		for _, i := range candidates {
+			check(i)
+		}
+	}
+	a.treeMatchQuery, a.treeMatches = needle, matches
+	if len(matches) == 0 {
+		return nil
+	}
+	tree := make([]treeEntry, 0, len(matches))
+	for _, i := range matches {
+		tree = append(tree, treeEntry{Path: index.Paths[i], Name: filepath.ToSlash(index.Rel[i])})
+	}
+	return tree
 }
 func (a *App) invalidateTreeIndex() {
 	if a.treeIndexCancel != nil {

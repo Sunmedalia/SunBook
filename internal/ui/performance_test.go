@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -75,5 +77,47 @@ func BenchmarkMultiCursorRendering(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		a.draw()
+	}
+}
+
+// A 50k-file workspace index, filtered one keystroke at a time.
+func benchmarkWorkspaceFiles(root string) []string {
+	files := make([]string, 0, 50000)
+	for i := range 50000 {
+		files = append(files, filepath.Join(root, fmt.Sprintf("pkg%03d", i%500), fmt.Sprintf("module_%d", i%37), fmt.Sprintf("file_%05d.go", i)))
+	}
+	files = append(files, filepath.Join(root, "internal", "ui", "render.go"))
+	sort.Strings(files)
+	return files
+}
+
+func BenchmarkExplorerFilterTyping(b *testing.B) {
+	a, _ := testApp(b)
+	a.setTreeIndex(newFileIndex(a.root, benchmarkWorkspaceFiles(a.root)))
+	query := "internal/ui/render"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		for i := 1; i <= len(query); i++ {
+			a.setTreeQuery(query[:i])
+		}
+		a.setTreeQuery("")
+	}
+}
+
+func BenchmarkQuickOpenTyping(b *testing.B) {
+	a, _ := testApp(b)
+	a.setTreeIndex(newFileIndex(a.root, benchmarkWorkspaceFiles(a.root)))
+	query := "uirender"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		a.quickOpen()
+		m := a.modal
+		for i := 1; i <= len(query); i++ {
+			m.Input = query[:i]
+			a.updateOpenModal(m)
+		}
+		a.modal = nil
 	}
 }

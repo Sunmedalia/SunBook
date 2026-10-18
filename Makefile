@@ -19,7 +19,7 @@ smoke: build
 	python3 scripts/smoke_markdown_plugin.py ./sunbook
 
 bench:
-	go test ./internal/text ./internal/ui ./internal/editor -run '^$$' -bench 'Benchmark(EditLargeDocument|EditMaterializedSnapshot|DiagnosticRendering|MultiCursorRendering|SyntaxHighlight|TerminalOutput|DiskChecks|MetadataDiskChecks)$$' -benchmem -count=5
+	go test ./internal/text ./internal/ui ./internal/editor -run '^$$' -bench 'Benchmark(EditLargeDocument|EditMaterializedSnapshot|DiagnosticRendering|MultiCursorRendering|SyntaxHighlight|ExplorerFilterTyping|QuickOpenTyping|TerminalOutput|DiskChecks|MetadataDiskChecks)$$' -benchmem -count=5
 
 clean:
 	rm -f sunbook coverage.out

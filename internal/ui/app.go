@@ -125,7 +125,9 @@ type App struct {
 	treeQuery                                             string
 	treeQueryCursor, treeQueryOffset                      int
 	treeFilterRect                                        rect
-	treeFiles                                             []string
+	treeFiles                                             fileIndex
+	treeMatchQuery                                        string
+	treeMatches                                           []int
 	treeIndexReady, treeIndexLoading                      bool
 	treeIndexSeq                                          int
 	treeIndexCancel                                       context.CancelFunc
@@ -857,7 +859,8 @@ func (a *App) switchWorkspace() {
 			a.treeIndexSeq++
 			a.treeIndexReady = false
 			a.treeIndexLoading = false
-			a.treeFiles = nil
+			a.setTreeIndex(fileIndex{})
+			a.treeIndexReady = false
 			a.treeAll = nil
 			a.tree = nil
 			a.treeQuery = ""

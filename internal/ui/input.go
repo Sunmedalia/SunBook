@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -552,19 +552,23 @@ func (a *App) showText(title, body string) {
 	a.setModal(&modal{Title: title, Body: strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n"), Hint: "↑/↓ or wheel scrolls · Esc closes"})
 }
 func fuzzy(hay, needle string) bool {
-	hay = strings.ToLower(hay)
-	needle = strings.ToLower(needle)
+	return fuzzyLower(strings.ToLower(hay), strings.ToLower(needle))
+}
+
+// fuzzyLower is fuzzy for strings that are already lower-cased.
+func fuzzyLower(hay, needle string) bool {
 	if strings.Contains(hay, needle) {
 		return true
 	}
-	r := []rune(needle)
-	i := 0
 	for _, c := range hay {
-		if i < len(r) && c == r[i] {
-			i++
+		if needle == "" {
+			break
+		}
+		if r, size := utf8.DecodeRuneInString(needle); c == r {
+			needle = needle[size:]
 		}
 	}
-	return i == len(r)
+	return needle == ""
 }
 func (a *App) filterModal() {
 	m := a.modal
@@ -1111,4 +1115,4 @@ func (a *App) reveal() {
 	v.Top = max(0, v.Top)
 	v.Left = max(0, v.Left)
 }
-func (a *App) gutter(v *editor.View) int { return len(fmt.Sprint(v.Doc.Buffer.LineCount())) + 2 }
+func (a *App) gutter(v *editor.View) int { return len(strconv.Itoa(v.Doc.Buffer.LineCount())) + 2 }
