@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -31,7 +30,7 @@ func (a *App) refreshGit() {
 			if err != nil {
 				nextError = err.Error()
 			}
-			if (reflect.DeepEqual(a.git, status) || err != nil) && a.gitError == nextError {
+			if (a.git.Equal(status) || err != nil) && a.gitError == nextError {
 				if !a.gitLogReading && time.Since(a.gitLogRefreshed) >= time.Minute {
 					a.refreshGitLog()
 				}

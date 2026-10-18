@@ -3,7 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,7 +37,7 @@ func (a *App) refreshGitLog() {
 			if err != nil {
 				nextError = err.Error()
 			}
-			unchanged := a.gitLogLoaded && a.gitLogError == nextError && (err != nil || reflect.DeepEqual(a.gitLog, revisions))
+			unchanged := a.gitLogLoaded && a.gitLogError == nextError && (err != nil || slices.EqualFunc(a.gitLog, revisions, gitservice.Revision.Equal) && (a.gitLog == nil) == (revisions == nil))
 			a.gitLogRefreshed = time.Now()
 			a.gitLogLoaded = true
 			if unchanged {

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -173,7 +172,7 @@ func (a *App) drawPluginSplit() {
 		if !p.Reading {
 			b := p.Outcome.doc.Buffer
 			gutter := min(6, max(2, r.W/4))
-			a.put(r.X, y, gutter-1, fmt.Sprintf("%*d", gutter-1, index+1), a.muted)
+			a.put(r.X, y, gutter-1, lineNumber(index+1, gutter-1), a.muted)
 			a.drawComparisonLine(r.X+gutter, y, r.W-gutter-1, b.Line(index), b.LineStart(index), p.Left, nil, a.base)
 			continue
 		}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +41,24 @@ type Status struct {
 type Revision struct {
 	Hash, Author, Age, Subject string
 	Files                      []CommitFile
+}
+
+// Equal matches reflect.DeepEqual, including nil versus empty file lists,
+// without reflection on every periodic refresh. TestEqualCoversEveryField
+// fails when a new field is not compared here.
+func (s Status) Equal(o Status) bool {
+	return s.Root == o.Root && s.Branch == o.Branch && s.Head == o.Head && s.Upstream == o.Upstream &&
+		s.Ahead == o.Ahead && s.Behind == o.Behind && s.Detached == o.Detached && s.HasCommits == o.HasCommits &&
+		sameSlice(s.Files, o.Files)
+}
+
+// Equal matches reflect.DeepEqual for revisions.
+func (r Revision) Equal(o Revision) bool {
+	return r.Hash == o.Hash && r.Author == o.Author && r.Age == o.Age && r.Subject == o.Subject && sameSlice(r.Files, o.Files)
+}
+
+func sameSlice[T comparable](a, b []T) bool {
+	return (a == nil) == (b == nil) && slices.Equal(a, b)
 }
 
 func Run(ctx context.Context, dir string, args ...string) (string, error) {

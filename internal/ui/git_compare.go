@@ -208,7 +208,7 @@ func (a *App) drawComparison() {
 			}
 			a.fill(rect{pr.X, y, pr.W, 1}, style)
 			if number > 0 {
-				a.put(pr.X, y, gutter-1, fmt.Sprintf("%*d", gutter-1, number), style.Foreground(a.colors.muted))
+				a.put(pr.X, y, gutter-1, lineNumber(number, gutter-1), style.Foreground(a.colors.muted))
 			}
 			if changed {
 				marker := "−"

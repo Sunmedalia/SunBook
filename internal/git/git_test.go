@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -71,5 +72,43 @@ func TestGitLifecycle(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("NUL parsing lost special path", s.Files)
+	}
+}
+
+// Changing any single field, or nil versus empty files, must make Equal
+// disagree, exactly as reflect.DeepEqual does.
+func TestEqualCoversEveryField(t *testing.T) {
+	check := func(base any, equal func(a, b any) bool) {
+		t.Helper()
+		v := reflect.ValueOf(base)
+		if !equal(base, base) {
+			t.Fatal("value differs from itself")
+		}
+		for i := range v.NumField() {
+			changed := reflect.New(v.Type()).Elem()
+			changed.Set(v)
+			f := changed.Field(i)
+			switch f.Kind() {
+			case reflect.String:
+				f.SetString(f.String() + "x")
+			case reflect.Int:
+				f.SetInt(f.Int() + 1)
+			case reflect.Bool:
+				f.SetBool(!f.Bool())
+			case reflect.Slice:
+				f.Set(reflect.MakeSlice(f.Type(), 0, 0)) // nil versus empty
+			default:
+				t.Fatal("unhandled field kind", v.Type().Field(i).Name)
+			}
+			if equal(base, changed.Interface()) || reflect.DeepEqual(base, changed.Interface()) {
+				t.Fatal("Equal ignores field", v.Type().Field(i).Name)
+			}
+		}
+	}
+	check(Status{}, func(a, b any) bool { return a.(Status).Equal(b.(Status)) })
+	check(Revision{}, func(a, b any) bool { return a.(Revision).Equal(b.(Revision)) })
+	files := []File{{Path: "a", Index: "M"}}
+	if !(Status{Files: files}).Equal(Status{Files: []File{{Path: "a", Index: "M"}}}) || (Status{Files: files}).Equal(Status{Files: []File{{Path: "a", Index: "A"}}}) {
+		t.Fatal("file list comparison")
 	}
 }

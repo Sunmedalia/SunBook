@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -337,7 +338,7 @@ func (a *App) drawEditor(group int) {
 		if row == current && group == a.active {
 			numberStyle = a.accent
 		}
-		a.put(r.X, y, gutter-1, fmt.Sprintf("%*d", gutter-2, row+1), numberStyle)
+		a.put(r.X, y, gutter-1, lineNumber(row+1, gutter-2), numberStyle)
 		rowDiagnostics := diags.row(row)
 		if rowDiagnostics.marker {
 			a.put(r.X+gutter-1, y, 1, "!", a.base.Foreground(a.colors.danger))
@@ -435,6 +436,43 @@ func (a *App) drawEditor(group int) {
 		}
 	}
 }
+
+// lineNumber right-aligns n like fmt.Sprintf("%*d", width, n) with one
+// allocation; it runs for every visible row of every frame.
+func lineNumber(n, width int) string {
+	var buf [64]byte
+	if width < 0 || width > len(buf) {
+		return fmt.Sprintf("%*d", width, n)
+	}
+	digits := strconv.AppendInt(buf[width:width], int64(n), 10)
+	if len(digits) >= width {
+		return string(digits)
+	}
+	for i := range width - len(digits) {
+		buf[i] = ' '
+	}
+	copy(buf[width-len(digits):], digits)
+	return string(buf[:width])
+}
+
+// bracketPair returns the matching bracket and the direction to search.
+func bracketPair(c byte) (byte, int) {
+	switch c {
+	case '(':
+		return ')', 1
+	case '[':
+		return ']', 1
+	case '{':
+		return '}', 1
+	case ')':
+		return '(', -1
+	case ']':
+		return '[', -1
+	case '}':
+		return '{', -1
+	}
+	return 0, 0
+}
 func matchingBrackets(s string, head int) (int, int) {
 	if len(s) == 0 {
 		return -1, -1
@@ -446,14 +484,9 @@ func matchingBrackets(s string, head int) (int, int) {
 	if p < 0 || p >= len(s) {
 		return -1, -1
 	}
-	pairs := map[byte]byte{'(': ')', '[': ']', '{': '}', ')': '(', ']': '[', '}': '{'}
-	target, ok := pairs[s[p]]
-	if !ok {
+	target, dir := bracketPair(s[p])
+	if dir == 0 {
 		return -1, -1
-	}
-	dir := 1
-	if strings.ContainsRune(")]}", rune(s[p])) {
-		dir = -1
 	}
 	depth := 0
 	for q, steps := p, 0; q >= 0 && q < len(s) && steps < 10000; q, steps = q+dir, steps+1 {
