@@ -308,7 +308,19 @@ func (a *App) drawEditor(group int) {
 		hl.Spans = nil
 	}
 	diags := a.cachedDiagnostics(v.Doc)
-	matchA, matchB := matchingBrackets(b.String(), v.Head())
+	head := v.Head()
+	matchA, matchB := matchingBrackets(b.String(), head)
+	// Only selections touching a visible row can change a cell, so thousands
+	// of carets elsewhere in the file don't multiply the per-cell work.
+	var visible, rowSelections []text.Selection
+	if lastRow := min(v.Top+r.H, b.LineCount()) - 1; lastRow >= v.Top {
+		first, last := b.LineStart(v.Top), b.LineEnd(lastRow)
+		for _, sel := range v.Selections {
+			if lo, hi := sel.Range(); hi >= first && lo <= last {
+				visible = append(visible, sel)
+			}
+		}
+	}
 	for dy := 0; dy < r.H; dy++ {
 		row := v.Top + dy
 		y := r.Y + dy
@@ -332,6 +344,13 @@ func (a *App) drawEditor(group int) {
 		}
 		line := b.Line(row)
 		offset := b.LineStart(row)
+		end := b.LineEnd(row)
+		rowSelections = rowSelections[:0]
+		for _, sel := range visible {
+			if lo, hi := sel.Range(); hi >= offset && lo <= end {
+				rowSelections = append(rowSelections, sel)
+			}
+		}
 		col := 0
 		g := uniseg.NewGraphemes(line)
 		spanIdx := sort.Search(len(hl.Spans), func(i int) bool { return hl.Spans[i].End > offset })
@@ -364,12 +383,12 @@ func (a *App) drawEditor(group int) {
 			if p == matchA || p == matchB {
 				style = style.Background(a.colors.selection).Bold(true)
 			}
-			for _, sel := range v.Selections {
+			for _, sel := range rowSelections {
 				loSel, z := sel.Range()
 				if p < z && offset+hi > loSel {
 					style = style.Background(a.colors.selection)
 				}
-				if sel.Head == p && (group != a.active || a.focus != "editor" || sel.Head != v.Head()) {
+				if sel.Head == p && (group != a.active || a.focus != "editor" || sel.Head != head) {
 					style = style.Reverse(true)
 				}
 			}
@@ -388,8 +407,7 @@ func (a *App) drawEditor(group int) {
 				break
 			}
 		}
-		end := b.LineEnd(row)
-		for _, sel := range v.Selections {
+		for _, sel := range rowSelections {
 			loSel, z := sel.Range()
 			if loSel <= end && z > end {
 				xx := r.X + gutter + col - v.Left

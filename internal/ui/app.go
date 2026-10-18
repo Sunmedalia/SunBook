@@ -518,6 +518,11 @@ func (a *App) changed(d *editor.Document) {
 	}
 	delete(a.diagnostics, lsp.URI(d.Path))
 	delete(a.diagnosticCache, d)
+	// Keep the previous colours, shifted through this edit, until the new
+	// snapshot is tokenized; otherwise every keystroke blanks the file.
+	if hl := a.highlight[d]; hl.Version == d.Buffer.Version-1 && len(d.Buffer.LastEdits) > 0 {
+		a.highlight[d] = highlights{d.Buffer.Version, shiftSpans(hl.Spans, d.Buffer.LastEdits)}
+	}
 	a.scheduleHighlight(d)
 	a.completion = nil
 	if a.focus == "editor" {
