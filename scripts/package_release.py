@@ -9,20 +9,12 @@ import subprocess
 import tarfile
 import tempfile
 
-
-def release_member(info):
-    """Exclude runtime caches from installable plugin packages."""
-    parts = Path(info.name).parts
-    if "__pycache__" in parts or Path(info.name).name == ".DS_Store":
-        return None
-    if info.name.endswith((".pyc", ".pyo")):
-        return None
-    return info
+from verify_release import verify_archive
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True, help="release version, e.g. v0.1.0")
+    parser.add_argument("--version", required=True, help="release version, e.g. v0.3.0")
     parser.add_argument("--os", choices=["darwin", "linux"], required=True)
     parser.add_argument("--arch", choices=["amd64", "arm64"], required=True)
     parser.add_argument("--output", type=Path, default=Path("dist"))
@@ -48,9 +40,8 @@ def main():
         staging = output / f".{name}.tar.gz.tmp"
         try:
             with tarfile.open(staging, "w:gz") as bundle:
-                bundle.add(binary, arcname=f"{name}/sunbook")
-                for path in ["README.md", "CHANGELOG.md", "config.example.json", "docs", "examples", "sdk"]:
-                    bundle.add(root / path, arcname=f"{name}/{path}", filter=release_member)
+                bundle.add(binary, arcname="sunbook")
+            verify_archive(staging)
             staging.replace(archive)
         finally:
             staging.unlink(missing_ok=True)

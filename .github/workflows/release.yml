@@ -55,13 +55,20 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Check archives and generate SHA-256 checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          python3 scripts/verify_release.py dist/*.tar.gz
           python3 - <<'PY'
           import hashlib
+          import os
           from pathlib import Path
           archives = sorted(Path('dist').glob('*.tar.gz'))
-          if len(archives) != 4:
-              raise SystemExit(f'Expected 4 release archives, found {len(archives)}')
+          version = os.environ['RELEASE_TAG'].removeprefix('v')
+          expected = {f'sunbook_{version}_{system}_{arch}.tar.gz'
+                      for system in ('darwin', 'linux') for arch in ('amd64', 'arm64')}
+          if {p.name for p in archives} != expected:
+              raise SystemExit(f'Expected archives {sorted(expected)}, found {[p.name for p in archives]}')
           Path('dist/SHA256SUMS').write_text(''.join(
               f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in archives
           ), encoding='utf-8')

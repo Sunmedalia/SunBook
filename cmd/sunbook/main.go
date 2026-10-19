@@ -14,7 +14,7 @@ import (
 	"sunbook/internal/ui"
 )
 
-var version = "0.2.0"
+var version = "0.3.0"
 
 func main() {
 	if err := run(); err != nil {

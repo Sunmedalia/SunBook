@@ -51,3 +51,17 @@ jobs:
       - run: go test -race ./...
       - run: go vet ./...
       - run: make smoke
+      - name: Verify standalone release package
+        shell: bash
+        run: |
+          version=$(go run ./cmd/sunbook --version | awk '{print $2}')
+          target_os=$(go env GOOS)
+          target_arch=$(go env GOARCH)
+          package_dir=$(mktemp -d)
+          trap 'rm -rf "$package_dir"' EXIT
+          python3 scripts/package_release.py --version "$version" --os "$target_os" --arch "$target_arch" --output "$package_dir"
+          python3 scripts/verify_release.py "$package_dir"/*.tar.gz
+          tar -xzf "$package_dir/sunbook_${version}_${target_os}_${target_arch}.tar.gz" -C "$package_dir"
+          cd "$package_dir"
+          test "$(./sunbook --version)" = "SunBook $version"
+          ./sunbook --config "$package_dir/config.json" --doctor

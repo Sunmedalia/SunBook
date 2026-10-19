@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+- Release 压缩包仅包含根目录下的 `sunbook` 可执行文件，插件从商店或本地独立安装；CI 校验包内容，并在 macOS/Linux 解压验证版本及依赖诊断。
 
 - 插件商店增加 gh-proxy 下载勾选项，保存代理选择，并应用于目录和安装包下载。
 - 增加 GitHub 插件商店、搜索、详情和后台在线安装，首批提供 Text Tools 与 Markdown Tools。
