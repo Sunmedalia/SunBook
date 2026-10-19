@@ -37,7 +37,7 @@ func (a *App) drawContentScrollbar(area rect, top *int, total int, kind string, 
 	start, size := scrollbarThumb(bar.H, total, *top)
 	for row := 0; row < bar.H; row++ {
 		glyph, style := "│", a.base.Foreground(a.colors.border)
-		if kind == "modal" {
+		if kind == "modal" || kind == "search" {
 			style = a.chrome.Foreground(a.colors.border)
 		}
 		if row >= start && row < start+size {
@@ -83,6 +83,8 @@ func (a *App) scrollbarMouse(x, y int, pressed, fresh bool) bool {
 		a.drag = ""
 		a.completion = nil
 		switch bar.Kind {
+		case "search":
+			a.focus = "search"
 		case "editor":
 			a.active, a.focus = bar.Group, "editor"
 		case "diff":

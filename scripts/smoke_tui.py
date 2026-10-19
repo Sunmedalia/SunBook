@@ -111,6 +111,16 @@ def main():
             expected = prefix + "original\n"
             wait_for(lambda: path.read_text(encoding="utf-8") == expected, "saved Unicode paste")
 
+            # Find is live, stays open for next/previous, and searches the buffer.
+            clear_output()
+            os.write(master, b"\x06\x15")  # Ctrl+F, Ctrl+U
+            paste("original")
+            wait_for(lambda: "1/1" in screen.text and "Find in File" in screen.text, "live file find")
+            os.write(master, b"\r")
+            wait_for(lambda: "1/1" in screen.text and "Find in File" in screen.text, "find wraps without closing")
+            os.write(master, b"\x1b")
+            wait_for(lambda: "Find in File" not in screen.text, "close find")
+
             # F4 focuses the shell. Ctrl+J and Hide must preserve its session.
             clear_output()
             os.write(master, b"\x1bOS")

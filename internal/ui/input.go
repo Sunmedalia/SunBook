@@ -529,7 +529,7 @@ func (a *App) setModal(m *modal) {
 	a.filterModal()
 }
 func (a *App) prompt(title, initial string, submit func(string)) {
-	a.setModal(&modal{Title: title, Input: initial, InputEnabled: true, Hint: "Enter confirms · Ctrl+U clears · Esc cancels", Submit: func(s string, _ int) { submit(s) }})
+	a.setModal(&modal{Title: title, Input: initial, InputEnabled: true, Compact: true, Hint: "Enter confirms · Ctrl+U clears · Esc cancels", Submit: func(s string, _ int) { submit(s) }})
 }
 func (a *App) compactPrompt(title, initial, placeholder string, submit func(string)) {
 	const hint = "Enter confirms · Ctrl+U clears · Esc cancels"
@@ -625,6 +625,16 @@ func (a *App) modalAccept() {
 }
 func (a *App) modalKey(e *tcell.EventKey, name string) {
 	m := a.modal
+	if m.FindNavigate != nil {
+		switch name {
+		case "enter", "f3", "down":
+			m.FindNavigate(false)
+			return
+		case "shift+enter", "shift+f3", "up":
+			m.FindNavigate(true)
+			return
+		}
+	}
 	if a.openPathKey(m, e, name) {
 		return
 	}

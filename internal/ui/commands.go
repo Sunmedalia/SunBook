@@ -70,6 +70,8 @@ func (a *App) registerCommands() {
 		{"edit.moveUp", "Edit: Move Lines Up", "alt+up", func() { a.moveLines(-1) }},
 		{"edit.moveDown", "Edit: Move Lines Down", "alt+down", func() { a.moveLines(1) }},
 		{"search.find", "Search: Find in File", "ctrl+f", func() { a.find(false) }},
+		{"search.next", "Search: Next Match", "f3", func() { a.repeatFind(false) }},
+		{"search.previous", "Search: Previous Match", "shift+f3", func() { a.repeatFind(true) }},
 		{"search.replace", "Search: Replace in File", "ctrl+h", func() { a.find(true) }},
 		{"search.workspace", "Search: Find in Workspace", "ctrl+shift+f", a.workspaceSearch},
 		{"navigate.line", "Go to Line…", "ctrl+g", a.goLine},
@@ -611,18 +613,20 @@ func (a *App) moveLines(dir int) {
 }
 func (a *App) find(replace bool) {
 	d := a.view().Doc
-	initial := ""
+	initial := a.findQuery
 	sel := a.view().Selections[0]
 	if !sel.Empty() {
 		lo, hi := sel.Range()
 		initial = d.Buffer.String()[lo:hi]
 	}
+	a.focus = "editor"
+	if !replace {
+		a.showFind(initial)
+		return
+	}
 	a.prompt("Find in File", initial, func(needle string) {
+		a.findQuery = needle
 		if needle == "" {
-			return
-		}
-		if !replace {
-			a.findNext(needle)
 			return
 		}
 		a.prompt("Replace With", "", func(replacement string) {
@@ -651,22 +655,12 @@ func (a *App) find(replace bool) {
 	})
 }
 func (a *App) findNext(needle string) bool {
-	v := a.view()
-	s := v.Doc.Buffer.String()
-	head := v.Head()
-	i := strings.Index(s[head:], needle)
-	if i >= 0 {
-		i += head
-	} else {
-		i = strings.Index(s[:head], needle)
-	}
-	if i < 0 {
+	a.findQuery = needle
+	found := a.selectFileMatch(needle, false, false) >= 0
+	if !found && needle != "" {
 		a.notify("No match")
-		return false
 	}
-	v.Selections = []text.Selection{{Anchor: i, Head: i + len(needle)}}
-	a.reveal()
-	return true
+	return found
 }
 func (a *App) goLine() {
 	a.prompt("Go to Line (line[:column])", "", func(s string) {

@@ -82,6 +82,10 @@ func (a *App) startWorkspaceSearch() {
 	options := a.searchOptions
 	go func() {
 		defer cancel()
+		if _, err := exec.LookPath("rg"); err != nil {
+			a.builtinWorkspaceSearch(ctx, seq, root, query, options)
+			return
+		}
 		args := []string{"--no-config", "--json"}
 		if options.Case {
 			args = append(args, "--case-sensitive")
@@ -145,7 +149,7 @@ func (a *App) startWorkspaceSearch() {
 			}
 			for _, match := range row.Data.Submatches {
 				results = append(results, searchHit{Path: filepath.Join(root, row.Data.Path.Text), Text: row.Data.Lines.Text, Line: row.Data.Line - 1, Column: match.Start, End: match.End})
-				if len(results) >= 2000 {
+				if len(results) >= searchLimit {
 					break
 				}
 			}
@@ -153,7 +157,7 @@ func (a *App) startWorkspaceSearch() {
 				a.publishSearch(seq, root, results, "", false, false)
 				lastPublish = time.Now()
 			}
-			if len(results) >= 2000 {
+			if len(results) >= searchLimit {
 				truncated = true
 				cancel()
 				break

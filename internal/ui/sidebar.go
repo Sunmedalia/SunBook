@@ -148,7 +148,7 @@ func (a *App) sidebarMouse(e *tcell.EventMouse, fresh bool, wheel int) {
 			return
 		}
 		if wheel != 0 {
-			a.searchTop = max(0, min(a.searchTop+wheel, max(0, len(a.searchRows())-1)))
+			a.searchTop = max(0, min(a.searchTop+wheel, max(0, len(a.searchRows())-max(1, a.sideRect.Y+a.sideRect.H-a.searchBodyStart()))))
 		}
 		for _, h := range a.searchGroupHits {
 			if h.contains(x, y) {

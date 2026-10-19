@@ -20,7 +20,7 @@
 | 文件浏览 | Explorer 支持目录展开、文件名/路径过滤和语言图标；单击预览，双击固定标签 |
 | 编辑与分屏 | 多标签、标签拖动排序、拖到编辑区边缘分屏；支持多光标、撤销/重做和鼠标选区；内容区提供可点击、拖动的窄滚动条 |
 | 搜索与打开 | `Ctrl+P` 模糊查找文件，支持 `file:line:column`；`Ctrl+O` 浏览目录并编辑路径 |
-| 工作区搜索 | ripgrep 搜索、匹配高亮、文件分组，以及大小写、整词、正则和路径过滤 |
+| 工作区搜索 | 优先使用 ripgrep，无需安装依赖的内置 Go 引擎自动兜底；支持匹配高亮、文件分组、大小写、整词、正则和路径过滤 |
 | Git | 分支创建/切换/重命名、安全删除、合并和远程跟踪；暂存/取消暂存、提交、静默刷新；Git Log 显示文件数和可展开目录树，点击历史文件可查看对应版本对比 |
 | 插件 | 本地插件安装、权限审核、命令扩展、修改预览；独立进程、健康检查、自动重启与熔断 |
 | 内置终端 | 真实 PTY、滚动历史；可在底部和右侧之间切换，隐藏后保留 Shell 会话 |
@@ -103,6 +103,7 @@ sunbook --config config.json .
 | `Ctrl+S` / `Ctrl+Shift+S` | 保存 / 另存为 |
 | `Ctrl+Z` / `Ctrl+Y` | 撤销 / 重做 |
 | `Ctrl+F` / `Ctrl+H` | 文件内查找 / 替换 |
+| `F3` / `Shift+F3` | 下一个 / 上一个匹配；Ctrl+F 实时查找框内用 Enter / Shift+Enter 跳转 |
 | `Ctrl+Shift+E` / `Ctrl+Shift+F` / `Ctrl+Shift+G` | Explorer / Search / Git |
 | `Ctrl+B` / `Ctrl+J` | 显示或隐藏侧边栏 / 面板 |
 | `Ctrl+\` | 切换编辑器分屏 |
@@ -178,7 +179,7 @@ go run ./cmd/sunbook --check-plugin examples/text-tools
 | 可选工具 | 用途 |
 | --- | --- |
 | `git` | Source Control、Git Log 和版本对比 |
-| `rg`（ripgrep） | 工作区全文搜索与遵循忽略规则的文件索引 |
+| `rg`（ripgrep，可选） | 加速工作区全文搜索与文件索引；未安装时全文搜索自动使用内置 Go 引擎 |
 | `gopls` | Go 语言服务 |
 | `pyright-langserver` | Python 语言服务 |
 | `typescript-language-server`、TypeScript | JS/TS 语言服务 |
@@ -201,3 +202,7 @@ python3 scripts/package_release.py --version 0.2.0 --os darwin --arch arm64
 发布记录见 [CHANGELOG.md](CHANGELOG.md)。项目结构与可选集成测试见 [详细操作手册](docs/usage.md#development-and-verification)。
 
 基础编辑支持 macOS/Linux；暂不支持 Windows、DAP 调试、在线插件市场、远程开发和 Vim 模式。二进制及非 UTF-8 文件会拒绝打开，超过 2 MiB 的内容关闭语法高亮。
+
+### 内置搜索
+
+工作区搜索优先使用系统 `rg`，未安装时自动使用随 SunBook 编译的 Go 搜索引擎，无需单独下载。两种引擎都支持智能大小写、整词、正则、逗号分隔的包含 / 排除路径，以及最多 2000 条结果和取消搜索。内置引擎跳过隐藏文件、符号链接和二进制文件，读取工作区及子目录的 `.gitignore`、`.ignore`、`.rgignore`，支持常用通配符、目录规则和 `!` 反选；不读取工作区外的全局忽略配置。正则采用 Go RE2 语法。工作区搜索读取磁盘文件；Ctrl+F 查找当前编辑缓冲区，包含尚未保存的修改。

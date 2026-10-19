@@ -71,6 +71,20 @@ func TestExtensionPreviewArtifact(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	a.find(false)
+	a.modalInsert("fmt")
+	save("find-dark")
+	findLight, _ := config.FindTheme("github-light")
+	a.applyTheme(findLight.Theme)
+	save("find-light")
+	mt.SetSize(vt.Coord{X: 45, Y: 12})
+	a.screen.Sync()
+	save("find-narrow")
+	mt.SetSize(vt.Coord{X: 110, Y: 32})
+	a.screen.Sync()
+	a.modal = nil
+	findDark, _ := config.FindTheme("sunbook")
+	a.applyTheme(findDark.Theme)
 	a.sidebarView = "Plugins"
 	a.focus = "plugins"
 	a.pluginSelected = 1

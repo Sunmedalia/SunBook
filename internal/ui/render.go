@@ -740,6 +740,20 @@ func (a *App) drawModal() {
 	}
 	x := (w - width) / 2
 	y := max(1, (h-height)/3)
+	if m.FindNavigate != nil {
+		// Anchor to the active pane, moving below a match near the top so
+		// the live result remains visible instead of hiding behind the field.
+		area := a.rects[a.active]
+		width = max(1, min(width, area.W-2))
+		x = max(0, area.X+area.W-width-1)
+		y = max(1, area.Y)
+		row, _ := a.view().Doc.Buffer.Position(a.view().Head())
+		matchY := area.Y + row - a.view().Top
+		if matchY >= y && matchY < y+height && matchY+height < h-2 {
+			y = matchY + 1
+		}
+		y = min(y, max(1, h-height-1))
+	}
 	a.modalRect = rect{x, y, width, height}
 	a.fill(rect{x + 1, y + 1, width, height}, a.base.Background(a.colors.shadow))
 	a.fill(a.modalRect, a.chrome)

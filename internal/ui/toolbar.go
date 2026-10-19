@@ -108,6 +108,13 @@ func (a *App) drawButton(x, y int, label, id, hint string, active bool) int {
 	a.buttons = append(a.buttons, button{rect: rect{x, y, width, 1}, Command: id, Hint: hint, Disabled: !enabled})
 	return width
 }
+func (a *App) showFindButton() bool {
+	v := a.view()
+	return a.focus == "editor" && !a.comparing() && v != nil &&
+		(v.Doc.Path != "" || v.Doc.Buffer.Len() > 0) &&
+		(a.modal == nil || a.modal.FindNavigate != nil)
+}
+
 func (a *App) drawToolbar() {
 	w, _ := a.screen.Size()
 	x := 1
@@ -119,6 +126,12 @@ func (a *App) drawToolbar() {
 	moreLabel := a.actionLabel("app.commands", "More", true)
 	helpX := w - text.Width(helpLabel, 4) - 3
 	moreX := helpX - text.Width(moreLabel, 4) - 3
+	findX := moreX
+	if a.showFindButton() {
+		findLabel := a.actionLabel("search.find", "Find", false)
+		findX -= text.Width(findLabel, 4) + 3
+		a.drawButton(findX, 0, findLabel, "search.find", "Find text in current file (Ctrl+F)", a.modal != nil && a.modal.FindNavigate != nil)
+	}
 	a.drawButton(moreX, 0, moreLabel, "app.commands", "All commands (F1)", false)
 	a.drawButton(helpX, 0, helpLabel, "app.help", "Help: keyboard shortcuts", false)
 	actions := []struct {
@@ -128,7 +141,6 @@ func (a *App) drawToolbar() {
 		{"New", "file.new", "New file (Ctrl+N)", false, false},
 		{"Open", "file.open", "Open file (Ctrl+O)", false, false},
 		{"Save", "file.save", "Save file (Ctrl+S)", false, false},
-		{"Find", "search.find", "Find in file (Ctrl+F)", false, false},
 		{"Undo", "edit.undo", "Undo (Ctrl+Z)", false, true},
 		{"Redo", "edit.redo", "Redo (Ctrl+Y)", false, true},
 		{"Split", "view.split", "Toggle split editor (Ctrl+\\)", a.split, false},
@@ -141,7 +153,7 @@ func (a *App) drawToolbar() {
 		}
 		label := a.actionLabel(action.id, action.label, compact)
 		width := text.Width(label, 4) + 2
-		if x+width >= moreX {
+		if x+width >= findX {
 			continue
 		}
 		x += a.drawButton(x, 0, label, action.id, action.hint, action.active) + 1

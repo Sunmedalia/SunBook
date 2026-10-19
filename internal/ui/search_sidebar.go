@@ -107,7 +107,7 @@ func (a *App) drawSearchSidebar() {
 	}
 	rows := a.searchRows()
 	if len(rows) > 0 {
-		a.searchTop = max(0, min(a.searchTop, len(rows)-1))
+		a.searchTop = max(0, min(a.searchTop, len(rows)-max(1, r.Y+r.H-a.searchBodyStart())))
 	}
 	for y, i := a.searchBodyStart(), a.searchTop; y < r.Y+r.H && i < len(rows); y, i = y+1, i+1 {
 		row := rows[i]
@@ -137,7 +137,7 @@ func (a *App) drawSearchSidebar() {
 		a.drawSearchSnippet(r.X+1+pw, y, r.W-2-pw, hit, style)
 		a.sideHits = append(a.sideHits, sideHit{rect{r.X, y, r.W, 1}, row.Index})
 	}
-	a.sidebarScroll(rect{r.X, a.searchBodyStart(), r.W, max(0, r.Y+r.H-a.searchBodyStart())}, a.searchTop, len(rows))
+	a.drawContentScrollbar(rect{r.X, a.searchBodyStart(), r.W, max(0, r.Y+r.H-a.searchBodyStart())}, &a.searchTop, len(rows), "search", 0)
 }
 func (a *App) drawSearchSnippet(x, y, width int, h searchHit, style tcell.Style) {
 	if width <= 0 {

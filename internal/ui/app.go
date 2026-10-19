@@ -46,6 +46,7 @@ type item struct {
 	Swatch        [3]string
 }
 type modal struct {
+	FindNavigate                 func(bool)
 	Open                         *openPicker
 	Subtitle, Placeholder, Empty string
 	Accept                       func(bool)
@@ -203,6 +204,7 @@ type App struct {
 	fileCheckForce                                        bool
 	fileStates                                            map[*editor.Document]filePollState
 	searchCancel                                          context.CancelFunc
+	findQuery                                             string
 	searchQuery                                           string
 	searchCursor, searchOffset, searchSelected, searchTop int
 	searchInputRect                                       rect
