@@ -23,17 +23,19 @@ type Theme struct {
 	Syntax     string `json:"syntax,omitempty"`
 }
 type Config struct {
-	Plugins       map[string]plugin.Preference `json:"plugins,omitempty"`
-	FilePath      string                       `json:"-"`
-	ActivityIcons string                       `json:"activityIcons"`
-	FileIcons     string                       `json:"fileIcons"`
-	TabSize       int                          `json:"tabSize"`
-	InsertSpaces  bool                         `json:"insertSpaces"`
-	Shell         string                       `json:"shell"`
-	PythonPath    string                       `json:"pythonPath"`
-	Theme         Theme                        `json:"theme"`
-	Keybindings   map[string]string            `json:"keybindings"`
-	Servers       map[string]Server            `json:"servers"`
+	PluginUseGHProxy bool                         `json:"pluginUseGHProxy,omitempty"`
+	PluginCatalogURL string                       `json:"pluginCatalogURL,omitempty"`
+	Plugins          map[string]plugin.Preference `json:"plugins,omitempty"`
+	FilePath         string                       `json:"-"`
+	ActivityIcons    string                       `json:"activityIcons"`
+	FileIcons        string                       `json:"fileIcons"`
+	TabSize          int                          `json:"tabSize"`
+	InsertSpaces     bool                         `json:"insertSpaces"`
+	Shell            string                       `json:"shell"`
+	PythonPath       string                       `json:"pythonPath"`
+	Theme            Theme                        `json:"theme"`
+	Keybindings      map[string]string            `json:"keybindings"`
+	Servers          map[string]Server            `json:"servers"`
 }
 
 func Default() Config {

@@ -423,6 +423,8 @@ func (a *App) pluginKey(e *tcell.EventKey, name string) {
 		a.pluginSelected = max(0, len(a.pluginStatuses)-1)
 	case "r":
 		a.refreshPlugins()
+	case "s":
+		a.openPluginStore()
 	case "i":
 		a.installPlugin()
 	case "escape":
@@ -442,12 +444,15 @@ func (a *App) drawPlugins() {
 	}
 	a.put(r.X+1, r.Y+1, r.W-2, fmt.Sprintf("%d ready / %d installed", ready, len(a.pluginStatuses)), band)
 	if r.H > 3 {
-		a.drawButton(r.X+1, r.Y+2, "Install…", "plugins.install", "Install a local plugin folder (i)", false)
+		a.drawButton(r.X+1, r.Y+2, "Local…", "plugins.install", "Install a local plugin folder (i)", false)
+	}
+	if r.H > 3 {
+		a.drawButton(r.X+11, r.Y+2, "Store…", "plugins.store", "Browse GitHub plugin store (s)", false)
 	}
 	if len(a.pluginStatuses) == 0 {
 		a.put(r.X+1, r.Y+4, r.W-2, "No plugins installed", a.accent)
 		if r.H > 7 {
-			a.put(r.X+1, r.Y+6, r.W-2, "Install a local folder", a.muted)
+			a.put(r.X+1, r.Y+6, r.W-2, "Browse Store (s) or install", a.muted)
 			a.put(r.X+1, r.Y+7, r.W-2, "then review permissions.", a.muted)
 		}
 		return

@@ -4,7 +4,7 @@ SunBook 插件是通过标准输入、标准输出通信的独立进程，适合
 
 ## 安装与使用
 
-1. 在左侧 **Plugins**（拼图图标）选择 **Install…**，输入插件文件夹路径。也可以使用 `F1 → Plugins: Install Local Plugin…`。
+1. 在左侧 **Plugins**（拼图图标）选择 **Store…**（快捷键 `s`），或使用 `F1 → Plugins: Browse Store…`。输入名称搜索，Enter 查看版本、作者、运行时和来源，选择 **Install from GitHub** 在线安装。选择 **Local…**（`i`）或 `F1 → Plugins: Install Local Plugin…` 则安装本地文件夹。
 2. 安装包复制到当前配置文件旁的 `plugins/<id>/`，安装后保持禁用。自定义 `--config` 会使用对应配置目录。
 3. 选中插件按 Enter，选择 **Enable plugin…**，阅读文档访问权限并启用。
 4. 在插件详情或 F1 命令面板运行命令。文本修改必须经过预览确认，保留为未保存修改，可一次撤销。
@@ -14,7 +14,17 @@ SunBook 插件是通过标准输入、标准输出通信的独立进程，适合
 
 [Markdown Tools](../examples/markdown-tools) 提供 Markdown 格式化与左右分屏阅读/源码预览，以及标题目录、待办完成率和选中任务状态切换。安装 `examples/markdown-tools`，启用后在 F1 搜索 **Markdown Tools:**；仅需要文档读写权限，无需联网，修改继续使用宿主预览和一次撤销。
 
-手动安装也可将完整插件目录复制到配置目录的 `plugins/`，然后执行 **Plugins: Refresh Installed Plugins**；运行中也每 30 秒检查一次插件目录。批准覆盖整个插件包的路径、文件内容和文件可执行位，清单或代码变更均停止旧进程并要求重新审核；每次启动前也会重新校验。安装过程中源内容发生变化会拒绝安装。旧版仅针对清单的批准记录升级后需要重新审核一次。当前没有在线市场或自动下载、自动更新。
+手动安装也可将完整插件目录复制到配置目录的 `plugins/`，然后执行 **Plugins: Refresh Installed Plugins**；运行中也每 30 秒检查一次插件目录。批准覆盖整个插件包的路径、文件内容和文件可执行位，清单或代码变更均停止旧进程并要求重新审核；每次启动前也会重新校验。安装过程中源内容发生变化会拒绝安装。旧版仅针对清单的批准记录升级后需要重新审核一次。在线商店仅在用户打开时获取目录，选定插件后下载，不自动更新或覆盖已安装的插件。更新需先禁用、移除，再从商店安装。
+
+## GitHub 插件商店
+
+商店和插件详情提供 **[ ] Use gh-proxy for downloads** 勾选项，默认关闭。启用后目录及安装包均通过 `https://gh-proxy.com/` 加速，重启后保留选择，也可配置 `"pluginUseGHProxy": true`。目录加载前即可勾选，切换时取消旧目录请求并按新方式重新加载；下载中的安装任务保持开始时的下载方式。代理失败会提示错误，可重试或取消勾选切回直连。代理下载继续执行 SHA-256 及安装包校验；该选项仅用于公开插件下载，不修改 Git 或系统代理设置。
+
+默认目录与 ZIP 安装包托管于 [SunBook-plugins](https://github.com/Sunmedalia/SunBook-plugins)，首批提供 Text Tools、Markdown Tools，均需要用户安装 Python 3.9+。`F1 → Plugins: Show Store` 可重新打开已加载目录。安装在后台执行，编辑器可继续使用；HTTP 错误、超时、包校验失败会显示错误，可重新打开商店重试。
+
+下载只接受 HTTPS GitHub 地址及受限重定向，目录上限 1MiB，ZIP 下载及解压总量分别最多 64MiB；校验 SHA-256 后拒绝路径穿越、符号链接、特殊文件、重复路径和超量条目，再校验插件 ID、名称、版本与 API。临时目录自动清理，最终安装复用本地安装的原子目录切换和完整包审核。下载安装不会执行插件、安装 Python 依赖或自动启用。
+
+SHA-256 保证包与所读取的目录一致，并非发行方签名；目录维护者可以更换包及校验值。只从可信目录安装，并在启用前审核源代码和权限。配置可设置 `"pluginCatalogURL": "https://raw.githubusercontent.com/<owner>/<repo>/main/index.json"` 指向自维护的 GitHub 目录。目录格式、打包与发布说明见 [marketplace/README.md](../marketplace/README.md)。开发验证可运行 `python3 scripts/smoke_plugin_store.py ./sunbook`，通过真实 PTY 和 GitHub 下载测试商店流程；追加 `--gh-proxy` 可验证真实代理勾选和下载。该测试使用一次性配置，不修改用户插件，不纳入离线 CI。
 
 ## 插件目录与清单
 

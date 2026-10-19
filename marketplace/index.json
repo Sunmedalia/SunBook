@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "id": "markdown-tools",
+      "name": "Markdown Tools",
+      "version": "1.2.0",
+      "description": "Live Markdown preview beside the editable source, explicit formatting, contents and tasks.",
+      "author": "Sunmedalia",
+      "repository": "https://github.com/Sunmedalia/SunBook-plugins",
+      "runtime": "Python 3.9+ (python3)",
+      "url": "https://raw.githubusercontent.com/Sunmedalia/SunBook-plugins/main/packages/markdown-tools-1.2.0.zip",
+      "sha256": "7292f50c639587619499860af059f14383b56965bde70ab3f2a98d1d61a05a83"
+    },
+    {
+      "id": "text-tools",
+      "name": "Text Tools",
+      "version": "1.0.0",
+      "description": "Count words and uppercase selections, including Unicode text.",
+      "author": "Sunmedalia",
+      "repository": "https://github.com/Sunmedalia/SunBook-plugins",
+      "runtime": "Python 3.9+ (python3)",
+      "url": "https://raw.githubusercontent.com/Sunmedalia/SunBook-plugins/main/packages/text-tools-1.0.0.zip",
+      "sha256": "e7452e073be889c7dcaf3796a3ace028b9ee3e2b0a5f98fa5876642733d84cdf"
+    }
+  ]
+}

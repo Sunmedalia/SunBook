@@ -110,3 +110,23 @@ func TestPluginPreferencesPreserveOtherSettings(t *testing.T) {
 		t.Fatal("permissions changed")
 	}
 }
+
+func TestPluginProxyPersistsAndPreservesSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"tabSize":2,"plugins":{"text-tools":{"enabled":true,"fingerprint":"approved"}},"future":42}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, enabled := range []bool{true, false} {
+		if err := SavePluginProxy(path, enabled); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil || cfg.PluginUseGHProxy != enabled || cfg.TabSize != 2 || !cfg.Plugins["text-tools"].Enabled {
+			t.Fatal(cfg, err)
+		}
+		raw, _ := os.ReadFile(path)
+		if !strings.Contains(string(raw), `"future": 42`) {
+			t.Fatal("unrelated configuration lost")
+		}
+	}
+}

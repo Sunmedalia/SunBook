@@ -77,3 +77,7 @@ func saveSettings(path string, changes map[string]any) error {
 func SavePlugins(path string, preferences map[string]plugin.Preference) error {
 	return saveSettings(path, map[string]any{"plugins": preferences})
 }
+
+func SavePluginProxy(path string, enabled bool) error {
+	return saveSettings(path, map[string]any{"pluginUseGHProxy": enabled})
+}

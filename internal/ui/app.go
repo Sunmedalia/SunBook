@@ -93,6 +93,11 @@ type App struct {
 	pluginSelectID                                        string
 	lastPluginResult                                      *pluginOutcome
 	markdownPreview                                       *pluginSplitPreview
+	pluginStoreCancel                                     context.CancelFunc
+	pluginStoreGeneration                                 uint64
+	pluginStoreLoading                                    bool
+	pluginStoreInstalling                                 bool
+	pluginCatalog                                         []plugin.StorePlugin
 	pluginRefreshing                                      bool
 	pluginRefreshPending                                  bool
 	ctx                                                   context.Context

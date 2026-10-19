@@ -40,6 +40,8 @@ func (a *App) registerCommands() {
 				a.closePluginSplit()
 			}
 		}},
+		{"plugins.store.show", "Plugins: Show Store", "", a.showPluginStore},
+		{"plugins.store", "Plugins: Browse Store…", "", a.openPluginStore},
 		{"plugins.install", "Plugins: Install Local Plugin…", "", a.installPlugin},
 		{"plugins.refresh", "Plugins: Refresh Installed Plugins", "", a.refreshPlugins},
 		{"activity.plugins", "Activity: Toggle Plugins", "", func() { a.toggleSidebarView("Plugins") }},
