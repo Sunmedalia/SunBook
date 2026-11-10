@@ -292,3 +292,47 @@ func BenchmarkScatteredEditHistory(b *testing.B) {
 	}
 	b.ReportMetric(retained, "retained-MB")
 }
+
+// The windowed Buffer methods must agree with the whole-string functions at
+// every offset, including across blank lines, graphemes and document edges.
+func TestWindowedCursorMethodsMatchStringFunctions(t *testing.T) {
+	rng := rand.New(rand.NewPCG(7, 11))
+	parts := []string{"a", "_", " ", "\t", "\n", "\n\n\n", "中", "👩‍💻", "é", "é", "(", ".", "word", "   "}
+	for range 200 {
+		var sb strings.Builder
+		for range rng.IntN(40) {
+			sb.WriteString(parts[rng.IntN(len(parts))])
+		}
+		s := sb.String()
+		b := New("")
+		if s != "" {
+			b.Apply([]Edit{{0, 0, s}}, nil, nil) // force piece reads
+		}
+		for p := 0; p <= len(s); p++ {
+			b.valid = false
+			if got, want := b.Snap(p), Snap(s, p); got != want {
+				t.Fatalf("Snap(%q, %d) = %d, want %d", s, p, got, want)
+			}
+			if !boundaryOf(s, p) {
+				continue
+			}
+			if got, want := b.Prev(p), Prev(s, p); got != want {
+				t.Fatalf("Prev(%q, %d) = %d, want %d", s, p, got, want)
+			}
+			if got, want := b.Next(p), Next(s, p); got != want {
+				t.Fatalf("Next(%q, %d) = %d, want %d", s, p, got, want)
+			}
+			for _, dir := range []int{-1, 1} {
+				if got, want := b.WordMove(p, dir), WordMove(s, p, dir); got != want {
+					t.Fatalf("WordMove(%q, %d, %d) = %d, want %d", s, p, dir, got, want)
+				}
+			}
+			gx, gy := b.WordRange(p)
+			wx, wy := WordRange(s, p)
+			if gx != wx || gy != wy {
+				t.Fatalf("WordRange(%q, %d) = %d,%d want %d,%d", s, p, gx, gy, wx, wy)
+			}
+		}
+	}
+}
+func boundaryOf(s string, p int) bool { return Snap(s, p) == p }

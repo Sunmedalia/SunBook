@@ -153,3 +153,39 @@ func TestDeleteRestoresCaretAndPairs(t *testing.T) {
 		t.Fatal("pair undo")
 	}
 }
+
+func TestDirtyTracksEditsUndoAndSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.txt")
+	if err := os.WriteFile(path, []byte("abc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := NewView(d)
+	check := func(want bool, step string) {
+		t.Helper()
+		if d.Dirty() != want {
+			t.Fatalf("%s: Dirty() = %v", step, !want)
+		}
+	}
+	check(false, "opened")
+	v.Set(1, false)
+	v.Insert("x")
+	check(true, "insert")
+	v.Undo(false)
+	check(false, "undo back to saved text")
+	// Same length, different content.
+	v.Selections = []text.Selection{{Anchor: 0, Head: 1}}
+	v.Insert("z")
+	check(true, "same-length replace")
+	if err := d.Save(false); err != nil {
+		t.Fatal(err)
+	}
+	check(false, "saved")
+	v.Undo(false)
+	check(true, "undo past the save")
+	d.Buffer = text.New("zbc\n")
+	check(false, "buffer replaced with saved text")
+}

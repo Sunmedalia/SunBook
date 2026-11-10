@@ -121,3 +121,24 @@ func BenchmarkQuickOpenTyping(b *testing.B) {
 		a.modal = nil
 	}
 }
+
+// Typing one character into the middle of a large file: the edit, the change
+// listeners and the next frame, as one keystroke in the event loop.
+func BenchmarkTypingLargeFile(b *testing.B) {
+	for _, mb := range []int{1, 5, 20} {
+		b.Run(fmt.Sprintf("%dMB", mb), func(b *testing.B) {
+			a, _ := testApp(b)
+			v := a.view()
+			v.Doc.Buffer = text.New(strings.Repeat("value := compute(alpha, beta) // trailing comment here\n", mb*1024*1024/55))
+			v.Set(v.Doc.Buffer.Len()/2, false)
+			a.reveal()
+			a.draw()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				a.apply([]text.Edit{{Start: v.Head(), End: v.Head(), Text: "x"}})
+				a.draw()
+			}
+		})
+	}
+}

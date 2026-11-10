@@ -531,3 +531,68 @@ func NormalizeSelections(s []Selection) []Selection {
 	}
 	return out
 }
+
+// window returns whole lines from extra rows before p's row through extra rows
+// after it, including the newline that ends the last one, and the window's
+// document offset. Grapheme clusters never span a newline, so the string
+// functions below give the same answer inside a window that starts on a line.
+func (b *Buffer) window(p, extra int) (string, int) {
+	r, _ := b.Position(p)
+	lo := b.LineStart(r - extra)
+	hi := min(b.length, b.LineEnd(min(r+extra, len(b.lines)-1))+1)
+	return b.Slice(lo, hi), lo
+}
+
+// complete reports whether a result computed in the window [lo, lo+n) can be
+// trusted: it must not stop at a window edge that is not a document edge.
+func (b *Buffer) complete(lo, n int, results ...int) bool {
+	for _, q := range results {
+		if q == lo && lo > 0 || q == lo+n && lo+n < b.length {
+			return false
+		}
+	}
+	return true
+}
+
+// Snap, Prev and Next are the Buffer forms of the package functions; they read
+// only the lines around p instead of the whole document.
+func (b *Buffer) Snap(p int) int {
+	p = max(0, min(p, b.length))
+	s, lo := b.window(p, 0)
+	return lo + Snap(s, p-lo)
+}
+func (b *Buffer) Prev(p int) int {
+	p = max(0, min(p, b.length))
+	if p == 0 {
+		return 0
+	}
+	s, lo := b.window(p-1, 0)
+	return lo + Prev(s, p-lo)
+}
+func (b *Buffer) Next(p int) int {
+	p = max(0, min(p, b.length))
+	s, lo := b.window(p, 0)
+	return lo + Next(s, p-lo)
+}
+
+// WordMove and WordRange can cross any number of blank lines, so the window
+// grows until the result no longer touches its edges.
+func (b *Buffer) WordMove(p, dir int) int {
+	p = max(0, min(p, b.length))
+	for extra := 1; ; extra *= 4 {
+		s, lo := b.window(p, extra)
+		if q := lo + WordMove(s, p-lo, dir); b.complete(lo, len(s), q) {
+			return q
+		}
+	}
+}
+func (b *Buffer) WordRange(p int) (int, int) {
+	p = max(0, min(p, b.length))
+	for extra := 1; ; extra *= 4 {
+		s, lo := b.window(p, extra)
+		x, y := WordRange(s, p-lo)
+		if b.complete(lo, len(s), lo+x, lo+y) {
+			return lo + x, lo + y
+		}
+	}
+}

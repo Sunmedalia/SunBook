@@ -389,7 +389,6 @@ func (a *App) key(e *tcell.EventKey) {
 func (a *App) typeInput(s string) {
 	v := a.view()
 	b := v.Doc.Buffer
-	source := b.String()
 	v.Selections = text.NormalizeSelections(v.Selections)
 	before := append([]text.Selection(nil), v.Selections...)
 	var edits []text.Edit
@@ -404,14 +403,14 @@ func (a *App) typeInput(s string) {
 		lo, hi := sel.Range()
 		insert := s
 		caret := len(s)
-		if sel.Empty() && strings.Contains(")]}\"'", s) && len(s) == 1 && lo < len(source) && source[lo:lo+1] == s {
+		if sel.Empty() && strings.Contains(")]}\"'", s) && len(s) == 1 && lo < b.Len() && b.ByteAt(lo) == s[0] {
 			after = append(after, text.Selection{Anchor: lo + delta + 1, Head: lo + delta + 1})
 			continue
 		}
 		if close, ok := pairs[s]; ok && sel.Empty() {
-			nextSpace := lo == len(source)
+			nextSpace := lo == b.Len()
 			if !nextSpace {
-				r, _ := utf8.DecodeRuneInString(source[lo:])
+				r, _ := utf8.DecodeRuneInString(b.Slice(lo, lo+utf8.UTFMax))
 				nextSpace = unicode.IsSpace(r) || strings.ContainsRune(")]},;", r)
 			}
 			if nextSpace {
@@ -423,15 +422,15 @@ func (a *App) typeInput(s string) {
 			line := b.Line(row)
 			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 			if lo < b.LineStart(row)+len(indent) {
-				indent = source[b.LineStart(row):lo]
+				indent = line[:lo-b.LineStart(row)]
 			}
 			insert = "\n" + indent
-			beforePart := strings.TrimSpace(source[b.LineStart(row):lo])
+			beforePart := strings.TrimSpace(line[:lo-b.LineStart(row)])
 			if strings.HasSuffix(beforePart, "{") || strings.HasSuffix(beforePart, "[") || strings.HasSuffix(beforePart, "(") {
 				insert += pad
 			}
 			caret = len(insert)
-			if lo < len(source) && strings.ContainsRune("}])", rune(source[lo])) && len(insert) > 1 && strings.HasSuffix(insert, pad) {
+			if lo < b.Len() && strings.ContainsRune("}])", rune(b.ByteAt(lo))) && len(insert) > 1 && strings.HasSuffix(insert, pad) {
 				insert += "\n" + indent
 			}
 		}
@@ -1000,7 +999,7 @@ func (a *App) mouse(e *tcell.EventMouse) {
 			v.Selections = append(v.Selections, text.Selection{Anchor: p, Head: p})
 			v.Selections = text.NormalizeSelections(v.Selections)
 		} else if a.clickCount == 2 {
-			lo, hi := text.WordRange(v.Doc.Buffer.String(), p)
+			lo, hi := v.Doc.Buffer.WordRange(p)
 			v.Selections = []text.Selection{{Anchor: lo, Head: hi}}
 		} else if a.clickCount == 3 {
 			row, _ := v.Doc.Buffer.Position(p)
