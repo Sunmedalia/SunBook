@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -138,6 +141,57 @@ func BenchmarkTypingLargeFile(b *testing.B) {
 			for range b.N {
 				a.apply([]text.Edit{{Start: v.Head(), End: v.Head(), Text: "x"}})
 				a.draw()
+			}
+		})
+	}
+}
+
+// Searching ~45 MB of source in 400 files under 20 directories, with a
+// 60-rule .gitignore, for a string that does not occur.
+func BenchmarkBuiltinSearch(b *testing.B) {
+	a, _ := testApp(b)
+	b.Setenv("PATH", b.TempDir())
+	go func() {
+		for range a.updates {
+		}
+	}()
+	src, err := os.ReadFile("render.go")
+	if err != nil {
+		b.Fatal(err)
+	}
+	content := bytes.Repeat(src, 4)
+	var rules []string
+	for i := range 60 {
+		rules = append(rules, fmt.Sprintf("build%d/**/*.o", i), fmt.Sprintf("*.tmp%d", i))
+	}
+	if err := os.WriteFile(filepath.Join(a.root, ".gitignore"), []byte(strings.Join(rules[:60], "\n")+"\n"), 0644); err != nil {
+		b.Fatal(err)
+	}
+	total := 0
+	for d := range 20 {
+		for f := range 20 {
+			name := filepath.Join(a.root, fmt.Sprintf("pkg%02d", d), fmt.Sprintf("file%02d.go", f))
+			if err := os.MkdirAll(filepath.Dir(name), 0755); err != nil {
+				b.Fatal(err)
+			}
+			if err := os.WriteFile(name, content, 0644); err != nil {
+				b.Fatal(err)
+			}
+			total += len(content)
+		}
+	}
+	for _, tc := range []struct {
+		name, query string
+		options     searchOptions
+	}{
+		{"ignore-case", "zzzneedle", searchOptions{}},
+		{"match-case", "ZzzNeedle", searchOptions{}},
+		{"regex", "zzz[n]eedle", searchOptions{Regex: true}},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(total))
+			for range b.N {
+				a.builtinWorkspaceSearch(context.Background(), 0, a.root, tc.query, tc.options)
 			}
 		})
 	}
