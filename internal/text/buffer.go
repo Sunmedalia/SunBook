@@ -24,12 +24,12 @@ type Edit struct {
 	Start, End int
 	Text       string
 }
-type snapshot struct {
-	Pieces     []piece
-	Selections []Selection
-}
+
+// A transaction stores its edits in both directions with the text each one
+// removed, so undo and redo replay edits instead of keeping piece snapshots.
+// Forward uses the coordinates before the transaction, Backward those after.
 type transaction struct {
-	Before, After     snapshot
+	Before, After     []Selection
 	Forward, Backward []Edit
 }
 
@@ -40,9 +40,12 @@ type Buffer struct {
 	original          string
 	added             []byte
 	pieces            []piece
+	spare             []piece // the previous piece table, reused by the next edit
+	pieceEnds         []int   // lazy document end offset of each piece
 	cache             string
 	valid             bool
 	lines             []int
+	spareLines        []int
 	history           []transaction
 	index             int
 	Version           int
@@ -94,105 +97,162 @@ func (b *Buffer) LineEnd(row int) int {
 	}
 	return b.length
 }
-func (b *Buffer) Line(row int) string { return b.String()[b.LineStart(row):b.LineEnd(row)] }
+func (b *Buffer) Line(row int) string { return b.Slice(b.LineStart(row), b.LineEnd(row)) }
+
+// locate returns the index of the piece containing offset p (< Len) and the
+// document offset at which that piece starts.
+func (b *Buffer) locate(p int) (int, int) {
+	if len(b.pieceEnds) != len(b.pieces) {
+		b.pieceEnds = b.pieceEnds[:0]
+		end := 0
+		for _, pc := range b.pieces {
+			end += pc.Len
+			b.pieceEnds = append(b.pieceEnds, end)
+		}
+	}
+	i := sort.Search(len(b.pieceEnds), func(i int) bool { return b.pieceEnds[i] > p })
+	return i, b.pieceEnds[i] - b.pieces[i].Len
+}
+
+// Slice returns the text in [lo, hi) without materializing the whole document.
+func (b *Buffer) Slice(lo, hi int) string {
+	lo, hi = max(0, min(lo, b.length)), max(0, min(hi, b.length))
+	if lo >= hi {
+		return ""
+	}
+	if b.valid {
+		return b.cache[lo:hi]
+	}
+	i, pos := b.locate(lo)
+	if p := b.pieces[i]; hi <= pos+p.Len && !p.Added {
+		return b.original[p.Start+lo-pos : p.Start+hi-pos]
+	}
+	out := make([]byte, 0, hi-lo)
+	for at := lo; at < hi; i++ {
+		p := b.pieces[i]
+		from, to := at-pos, min(hi-pos, p.Len)
+		if p.Added {
+			out = append(out, b.added[p.Start+from:p.Start+to]...)
+		} else {
+			out = append(out, b.original[p.Start+from:p.Start+to]...)
+		}
+		at = pos + to
+		pos += p.Len
+	}
+	return string(out)
+}
+
+// ByteAt returns the byte at offset p, which must be in [0, Len).
+func (b *Buffer) ByteAt(p int) byte {
+	if b.valid {
+		return b.cache[p]
+	}
+	i, pos := b.locate(p)
+	pc := b.pieces[i]
+	if pc.Added {
+		return b.added[pc.Start+p-pos]
+	}
+	return b.original[pc.Start+p-pos]
+}
+func (b *Buffer) boundary(p int) bool { return p == b.length || utf8.RuneStart(b.ByteAt(p)) }
+
+// Equal reports whether the document is s, comparing piece by piece.
+func (b *Buffer) Equal(s string) bool {
+	if len(s) != b.length {
+		return false
+	}
+	if b.valid {
+		return b.cache == s
+	}
+	at := 0
+	for _, p := range b.pieces {
+		want := s[at : at+p.Len]
+		if p.Added && string(b.added[p.Start:p.Start+p.Len]) != want || !p.Added && b.original[p.Start:p.Start+p.Len] != want {
+			return false
+		}
+		at += p.Len
+	}
+	return true
+}
 func (b *Buffer) Position(offset int) (row, col int) {
 	offset = max(0, min(offset, b.length))
 	row = sort.Search(len(b.lines), func(i int) bool { return b.lines[i] > offset }) - 1
 	return row, offset - b.lines[row]
 }
 
-// Update newline offsets without scanning or materializing unchanged text.
-// Multiple edits are applied from right to left in the original coordinate space.
-func (b *Buffer) updateLines(e Edit) {
-	left := sort.Search(len(b.lines), func(i int) bool { return b.lines[i] > e.Start })
-	right := sort.Search(len(b.lines), func(i int) bool { return b.lines[i] > e.End })
-	n := strings.Count(e.Text, "\n")
-	oldLen := len(b.lines)
-	nextLen := oldLen - (right - left) + n
-	if nextLen > oldLen {
-		b.lines = append(b.lines, make([]int, nextLen-oldLen)...)
-	}
-	copy(b.lines[left+n:], b.lines[right:oldLen])
-	b.lines = b.lines[:nextLen]
-	delta := len(e.Text) - (e.End - e.Start)
-	for i := left + n; i < len(b.lines); i++ {
-		b.lines[i] += delta
-	}
-	at := left
-	for i := 0; i < len(e.Text); i++ {
-		if e.Text[i] == '\n' {
-			b.lines[at] = e.Start + i + 1
-			at++
-		}
-	}
-	b.length += delta
-}
-func (b *Buffer) snap(sels []Selection) snapshot {
-	return snapshot{append([]piece(nil), b.pieces...), append([]Selection(nil), sels...)}
-}
-func (b *Buffer) restore(s snapshot) []Selection {
-	for i := len(b.LastEdits) - 1; i >= 0; i-- {
-		b.updateLines(b.LastEdits[i])
-	}
-	b.pieces = append([]piece(nil), s.Pieces...)
-	b.valid = false
-	b.Version++
-	return append([]Selection(nil), s.Selections...)
-}
-func (b *Buffer) replace(start, end int, s string) {
-	b.updateLines(Edit{Start: start, End: end, Text: s})
-	b.maintenanceBytes += len(s) + (end - start)
-	var ps []piece
-	pos := 0
-	insert := func() {
-		if s != "" {
-			at := len(b.added)
-			b.added = append(b.added, s...)
-
-			ps = append(ps, piece{true, at, len(s)})
-		}
-	}
-	inserted := false
-	for _, p := range b.pieces {
-		pe := pos + p.Len
-		if pe <= start {
-			ps = append(ps, p)
-		} else if pos >= end {
-			if !inserted {
-				insert()
-				inserted = true
-			}
-			ps = append(ps, p)
-		} else {
-			if start > pos {
-				ps = append(ps, piece{p.Added, p.Start, start - pos})
-			}
-			if !inserted {
-				insert()
-				inserted = true
-			}
-			if end < pe {
-				ps = append(ps, piece{p.Added, p.Start + end - pos, pe - end})
-			}
-		}
-		pos = pe
-	}
-	if !inserted {
-		insert()
-	}
-	b.pieces = nil
-	for _, p := range ps {
+// applyBatch replaces sorted, non-overlapping edits, all given in the current
+// document's coordinates, with one pass over the piece and line tables.
+// Inserted text is appended to the add store from left to right.
+func (b *Buffer) applyBatch(edits []Edit) {
+	old := b.pieces
+	out := b.spare[:0]
+	push := func(p piece) {
 		if p.Len == 0 {
-			continue
+			return
 		}
-		n := len(b.pieces)
-		if n > 0 && b.pieces[n-1].Added == p.Added && b.pieces[n-1].Start+b.pieces[n-1].Len == p.Start {
-			b.pieces[n-1].Len += p.Len
-		} else {
-			b.pieces = append(b.pieces, p)
+		if n := len(out); n > 0 && out[n-1].Added == p.Added && out[n-1].Start+out[n-1].Len == p.Start {
+			out[n-1].Len += p.Len
+			return
+		}
+		out = append(out, p)
+	}
+	pi, pos := 0, 0 // pos is the document offset of old[pi]
+	keep := func(from, to int) {
+		for from < to {
+			for pos+old[pi].Len <= from {
+				pos += old[pi].Len
+				pi++
+			}
+			p := old[pi]
+			lo, hi := from-pos, min(to, pos+p.Len)-pos
+			push(piece{p.Added, p.Start + lo, hi - lo})
+			from = pos + hi
 		}
 	}
+	at := 0
+	for _, e := range edits {
+		keep(at, e.Start)
+		if e.Text != "" {
+			start := len(b.added)
+			b.added = append(b.added, e.Text...)
+			push(piece{true, start, len(e.Text)})
+		}
+		at = e.End
+		b.maintenanceBytes += len(e.Text) + (e.End - e.Start)
+	}
+	keep(at, b.length)
+	b.pieces, b.spare = out, old[:0]
+	b.pieceEnds = b.pieceEnds[:0]
+	b.updateLines(edits)
 	b.valid = false
+}
+
+// updateLines rebuilds newline offsets in one merge pass without scanning or
+// materializing unchanged text. A line start s follows the newline at s-1, so
+// it survives an edit unless that newline lies inside the replaced range.
+func (b *Buffer) updateLines(edits []Edit) {
+	out := b.spareLines[:0]
+	li, delta := 0, 0
+	for _, e := range edits {
+		for li < len(b.lines) && b.lines[li] <= e.Start {
+			out = append(out, b.lines[li]+delta)
+			li++
+		}
+		for li < len(b.lines) && b.lines[li] <= e.End {
+			li++
+		}
+		for i := 0; i < len(e.Text); i++ {
+			if e.Text[i] == '\n' {
+				out = append(out, e.Start+delta+i+1)
+			}
+		}
+		delta += len(e.Text) - (e.End - e.Start)
+	}
+	for _, s := range b.lines[li:] {
+		out = append(out, s+delta)
+	}
+	b.lines, b.spareLines = out, b.lines[:0]
+	b.length += delta
 }
 
 // Apply validates non-overlapping edits against the original document and commits
@@ -203,32 +263,30 @@ func (b *Buffer) Apply(edits []Edit, before, after []Selection) bool {
 	}
 	edits = append([]Edit(nil), edits...)
 	sort.SliceStable(edits, func(i, j int) bool { return edits[i].Start < edits[j].Start })
-	s := b.String()
 	for i, e := range edits {
-		if e.Start < 0 || e.End < e.Start || e.End > len(s) || !utf8.ValidString(e.Text) || !boundary(s, e.Start) || !boundary(s, e.End) {
+		if e.Start < 0 || e.End < e.Start || e.End > b.length || !utf8.ValidString(e.Text) || !b.boundary(e.Start) || !b.boundary(e.End) {
 			return false
 		}
 		if i > 0 && (edits[i-1].End > e.Start || edits[i-1].Start == e.Start) {
 			return false
 		}
 	}
-	for i := range edits {
-		edits[i].Text = strings.Clone(edits[i].Text)
+	t := transaction{
+		Before:   append([]Selection(nil), before...),
+		After:    append([]Selection(nil), after...),
+		Forward:  edits,
+		Backward: make([]Edit, len(edits)),
 	}
-	t := transaction{Before: b.snap(before), Forward: edits}
 	delta := 0
-	for _, e := range edits {
-		t.Backward = append(t.Backward, Edit{Start: e.Start + delta, End: e.Start + delta + len(e.Text), Text: strings.Clone(s[e.Start:e.End])})
+	for i, e := range edits {
+		edits[i].Text = strings.Clone(e.Text)
+		t.Backward[i] = Edit{Start: e.Start + delta, End: e.Start + delta + len(e.Text), Text: b.Slice(e.Start, e.End)}
 		delta += len(e.Text) - (e.End - e.Start)
 	}
-	for i := len(edits) - 1; i >= 0; i-- {
-		e := edits[i]
-		b.replace(e.Start, e.End, e.Text)
-	}
+	b.applyBatch(edits)
 	b.Version++
 	b.LastEdits = edits
 	b.LastRemoved = removedTexts(t.Backward)
-	t.After = b.snap(after)
 	clear(b.history[b.index:])
 	b.history = append(b.history[:b.index], t)
 	b.historyGeneration++
@@ -248,27 +306,31 @@ func removedTexts(inverse []Edit) []string {
 	}
 	return out
 }
-func boundary(s string, p int) bool { return p == len(s) || utf8.RuneStart(s[p]) }
-func (b *Buffer) CanUndo() bool     { return b.index > 0 }
-func (b *Buffer) CanRedo() bool     { return b.index < len(b.history) }
+func (b *Buffer) CanUndo() bool { return b.index > 0 }
+func (b *Buffer) CanRedo() bool { return b.index < len(b.history) }
 func (b *Buffer) Undo() ([]Selection, bool) {
 	if b.index == 0 {
 		return nil, false
 	}
 	b.index--
-	b.LastEdits = b.history[b.index].Backward
-	b.LastRemoved = removedTexts(b.history[b.index].Forward)
-	return b.restore(b.history[b.index].Before), true
+	t := b.history[b.index]
+	b.LastEdits = t.Backward
+	b.LastRemoved = removedTexts(t.Forward)
+	b.applyBatch(t.Backward)
+	b.Version++
+	return append([]Selection(nil), t.Before...), true
 }
 func (b *Buffer) Redo() ([]Selection, bool) {
 	if b.index >= len(b.history) {
 		return nil, false
 	}
-	b.LastEdits = b.history[b.index].Forward
-	b.LastRemoved = removedTexts(b.history[b.index].Backward)
-	s := b.restore(b.history[b.index].After)
+	t := b.history[b.index]
+	b.LastEdits = t.Forward
+	b.LastRemoved = removedTexts(t.Backward)
+	b.applyBatch(t.Forward)
+	b.Version++
 	b.index++
-	return s, true
+	return append([]Selection(nil), t.After...), true
 }
 
 func Prev(s string, p int) int {

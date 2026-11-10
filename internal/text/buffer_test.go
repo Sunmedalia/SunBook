@@ -2,6 +2,8 @@ package text
 
 import (
 	"math/rand/v2"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -175,16 +177,31 @@ func FuzzBufferHistory(f *testing.F) {
 					_, end := g.Positions()
 					bounds = append(bounds, end)
 				}
-				lo := bounds[int(action)%len(bounds)]
-				hi := bounds[(int(action)+i)%len(bounds)]
-				if lo > hi {
-					lo, hi = hi, lo
+				// One to four non-overlapping edits form a single transaction,
+				// as multiple carets produce.
+				count := 1 + int(action/6)%4
+				var cuts []int
+				for k := range 2 * count {
+					cuts = append(cuts, bounds[(int(action)*(k+1)+i*7+k)%len(bounds)])
 				}
-				insert := []string{"x", "\n", "中", "👩‍💻", "é", ""}[int(action)%6]
-				if !b.Apply([]Edit{{Start: lo, End: hi, Text: insert}}, nil, nil) {
+				sort.Ints(cuts)
+				var edits []Edit
+				next, prev := "", 0
+				for k := 0; k < len(cuts); k += 2 {
+					lo, hi := cuts[k], cuts[k+1]
+					if len(edits) > 0 && edits[len(edits)-1].Start == lo {
+						continue
+					}
+					insert := []string{"x", "\n", "中", "👩‍💻", "é", ""}[(int(action)+k)%6]
+					edits = append(edits, Edit{Start: lo, End: hi, Text: insert})
+					next += s[prev:lo] + insert
+					prev = hi
+				}
+				next += s[prev:]
+				if !b.Apply(edits, nil, nil) {
 					t.Fatal("valid edit rejected")
 				}
-				states = append(states[:at+1], s[:lo]+insert+s[hi:])
+				states = append(states[:at+1], next)
 				at++
 			}
 			want := states[at]
@@ -200,6 +217,78 @@ func FuzzBufferHistory(f *testing.F) {
 					t.Fatal("line content")
 				}
 			}
+			// Read through the pieces, as if the cache had not been rebuilt.
+			b.valid = false
+			for p := range len(want) {
+				if b.ByteAt(p) != want[p] {
+					t.Fatal("byte", p)
+				}
+				q := min(len(want), p+1+int(action)%9)
+				if b.Slice(p, q) != want[p:q] {
+					t.Fatal("slice", p, q)
+				}
+			}
+			if !b.Equal(want) || b.Equal(want+"x") {
+				t.Fatal("equal")
+			}
 		}
 	})
+}
+
+// One caret per line, each typing the same character: one transaction with
+// `carets` edits per keystroke, as after "select all occurrences".
+func benchmarkMultiCursorTyping(b *testing.B, carets, keys int) {
+	source := strings.Repeat("hello world line\n", carets)
+	b.ReportAllocs()
+	for range b.N {
+		buf := New(source)
+		sels := make([]Selection, carets)
+		for i := range sels {
+			sels[i] = Selection{i * 17, i * 17}
+		}
+		for range keys {
+			edits := make([]Edit, carets)
+			after := make([]Selection, carets)
+			for i, s := range sels {
+				edits[i] = Edit{s.Head, s.Head, "x"}
+				after[i] = Selection{s.Head + i + 1, s.Head + i + 1}
+			}
+			if !buf.Apply(edits, sels, after) {
+				b.Fatal("apply")
+			}
+			sels = after
+		}
+		if buf.Len() != len(source)+carets*keys {
+			b.Fatal("length")
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Microseconds())/1000/float64(b.N*keys), "ms/key")
+}
+func BenchmarkMultiCursorTyping(b *testing.B) {
+	b.Run("carets=1000", func(b *testing.B) { benchmarkMultiCursorTyping(b, 1000, 20) })
+	b.Run("carets=5000", func(b *testing.B) { benchmarkMultiCursorTyping(b, 5000, 20) })
+}
+
+// A thousand single-caret edits scattered over a 3.4 MB document; the metric is
+// the heap retained by the buffer and its undo history afterwards.
+func BenchmarkScatteredEditHistory(b *testing.B) {
+	source := strings.Repeat("hello world line\n", 200000)
+	var retained float64
+	for range b.N {
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		buf := New(source)
+		for k := range 1000 {
+			p := (k * 104729) % buf.Len()
+			if !buf.Apply([]Edit{{p, p, "y"}}, nil, nil) {
+				b.Fatal("apply")
+			}
+		}
+		runtime.GC()
+		runtime.ReadMemStats(&after)
+		retained = (float64(after.HeapAlloc) - float64(before.HeapAlloc)) / (1 << 20)
+		runtime.KeepAlive(buf)
+	}
+	b.ReportMetric(retained, "retained-MB")
 }

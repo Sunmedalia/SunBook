@@ -14,7 +14,6 @@ type Compaction struct {
 	skip       bool
 	added      []byte
 	pieces     []piece
-	history    []transaction
 }
 
 func (b *Buffer) NeedsCompaction() bool { return b.maintenanceBytes >= maintenanceThreshold }
@@ -22,8 +21,9 @@ func (b *Buffer) RetryCompaction() {
 	b.maintenanceBytes = max(b.maintenanceBytes, maintenanceThreshold)
 }
 
-// CompactionTask captures immutable piece lists and backing-store prefixes.
+// CompactionTask captures the immutable piece list and backing-store prefixes.
 // Appends never change existing bytes; the worker doesn't read mutable Buffer state.
+// Undo history holds its own text, so only the current pieces reference storage.
 func (b *Buffer) CompactionTask() func() *Compaction {
 	if !b.NeedsCompaction() {
 		return nil
@@ -31,7 +31,6 @@ func (b *Buffer) CompactionTask() func() *Compaction {
 	b.maintenanceBytes = 0
 	original, added := b.original, b.added
 	pieces := append([]piece(nil), b.pieces...)
-	history := append([]transaction(nil), b.history...)
 	version, generation := b.Version, b.historyGeneration
 	return func() *Compaction {
 		result := &Compaction{version: version, generation: generation, skip: true}
@@ -46,10 +45,6 @@ func (b *Buffer) CompactionTask() func() *Compaction {
 			}
 		}
 		collect(pieces)
-		for _, t := range history {
-			collect(t.Before.Pieces)
-			collect(t.After.Pieces)
-		}
 		live := 0
 		for k := range refs {
 			intervals := refs[k]
@@ -97,11 +92,6 @@ func (b *Buffer) CompactionTask() func() *Compaction {
 			return out
 		}
 		result.pieces = remap(pieces)
-		result.history = history
-		for i := range result.history {
-			result.history[i].Before.Pieces = remap(history[i].Before.Pieces)
-			result.history[i].After.Pieces = remap(history[i].After.Pieces)
-		}
 		return result
 	}
 }
@@ -112,7 +102,8 @@ func (b *Buffer) InstallCompaction(c *Compaction) bool {
 	if c.skip {
 		return true
 	}
-	b.original, b.added, b.pieces, b.history = "", c.added, c.pieces, c.history
+	b.original, b.added, b.pieces = "", c.added, c.pieces
+	b.spare, b.pieceEnds = nil, nil
 	b.cache, b.valid = "", false
 	return true
 }
