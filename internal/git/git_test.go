@@ -112,3 +112,48 @@ func TestEqualCoversEveryField(t *testing.T) {
 		t.Fatal("file list comparison")
 	}
 }
+
+// The cached work tree root must follow repositories created, nested or
+// removed after the first status read.
+func TestReadStatusFollowsRepositoryChanges(t *testing.T) {
+	ctx := context.Background()
+	outer := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(outer); err == nil {
+		outer = resolved
+	}
+	inner := filepath.Join(outer, "ws", "deep")
+	if err := os.MkdirAll(inner, 0755); err != nil {
+		t.Fatal(err)
+	}
+	same := func(a, b string) bool { return filepath.Clean(filepath.FromSlash(a)) == filepath.Clean(b) }
+	if _, err := ReadStatus(ctx, inner); err == nil {
+		t.Skip("temporary directory is inside a Git repository")
+	}
+	if _, err := Run(ctx, outer, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // the second read is served from the cache
+		if s, err := ReadStatus(ctx, inner); err != nil || !same(s.Root, outer) {
+			t.Fatal("outer repository", s.Root, err)
+		}
+	}
+	ws := filepath.Join(outer, "ws")
+	if _, err := Run(ctx, ws, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := ReadStatus(ctx, inner); err != nil || !same(s.Root, ws) {
+		t.Fatal("nested repository not noticed", s.Root, err)
+	}
+	if err := os.RemoveAll(filepath.Join(ws, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := ReadStatus(ctx, inner); err != nil || !same(s.Root, outer) {
+		t.Fatal("removed repository still used", s.Root, err)
+	}
+	if err := os.RemoveAll(filepath.Join(outer, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadStatus(ctx, inner); err == nil {
+		t.Fatal("status succeeded outside any repository")
+	}
+}
