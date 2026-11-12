@@ -591,11 +591,11 @@ func (a *App) moveLines(dir int) {
 	if dir < 0 {
 		start = b.LineStart(first - 1)
 		end = b.LineEnd(last)
-		replacement = b.String()[b.LineStart(first):end] + "\n" + b.Line(first-1)
+		replacement = b.Slice(b.LineStart(first), end) + "\n" + b.Line(first-1)
 	} else {
 		start = b.LineStart(first)
 		end = b.LineEnd(last + 1)
-		replacement = b.Line(last+1) + "\n" + b.String()[start:b.LineEnd(last)]
+		replacement = b.Line(last+1) + "\n" + b.Slice(start, b.LineEnd(last))
 	}
 	after := append([]text.Selection(nil), v.Selections...)
 	shift := 0

@@ -310,7 +310,13 @@ func (a *App) drawEditor(group int) {
 	}
 	diags := a.cachedDiagnostics(v.Doc)
 	head := v.Head()
-	matchA, matchB := matchingBrackets(b.String(), head)
+	// The bracket search is limited to 10000 steps, so a window that wide
+	// on each side gives the same answer without copying the document.
+	windowStart := max(0, head-10001)
+	matchA, matchB := matchingBrackets(b.Slice(windowStart, head+10001), head-windowStart)
+	if matchA >= 0 {
+		matchA, matchB = matchA+windowStart, matchB+windowStart
+	}
 	// Only selections touching a visible row can change a cell, so thousands
 	// of carets elsewhere in the file don't multiply the per-cell work.
 	var visible, rowSelections []text.Selection

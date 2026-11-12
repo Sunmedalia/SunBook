@@ -5,11 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type File struct{ Path, OldPath, Index, Worktree string }
@@ -70,16 +73,75 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// The repository containing a workspace rarely changes, so periodic status
+// refreshes reuse it instead of starting rev-parse every time.
+var toplevels struct {
+	sync.Mutex
+	byDir map[string]toplevelEntry
+}
+
+type toplevelEntry struct{ root, resolved string }
+
+// toplevel returns the work tree root containing dir. A cached answer is
+// reused only while root still has a .git entry and no directory between
+// dir and root has gained one, which a nested repository would add.
+func toplevel(ctx context.Context, dir string) (string, error) {
+	toplevels.Lock()
+	entry, ok := toplevels.byDir[dir]
+	toplevels.Unlock()
+	if ok && entry.stillValid() {
+		return entry.root, nil
+	}
+	out, err := Run(ctx, dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		forgetToplevel(dir)
+		return "", err
+	}
+	root := strings.TrimSpace(out)
+	if resolved, e := filepath.EvalSymlinks(dir); e == nil {
+		toplevels.Lock()
+		if toplevels.byDir == nil || len(toplevels.byDir) >= 64 {
+			toplevels.byDir = map[string]toplevelEntry{}
+		}
+		toplevels.byDir[dir] = toplevelEntry{root, resolved}
+		toplevels.Unlock()
+	}
+	return root, nil
+}
+func (e toplevelEntry) stillValid() bool {
+	root := filepath.Clean(filepath.FromSlash(e.root))
+	if _, err := os.Lstat(filepath.Join(root, ".git")); err != nil {
+		return false
+	}
+	for d := e.resolved; d != root; {
+		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+			return false
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return false // root is not an ancestor in this form; don't cache
+		}
+		d = parent
+	}
+	return true
+}
+func forgetToplevel(dir string) {
+	toplevels.Lock()
+	delete(toplevels.byDir, dir)
+	toplevels.Unlock()
+}
+
 // One porcelain v2 status reports the branch, upstream counts and files, so
-// periodic refreshes start two Git processes instead of six.
+// periodic refreshes start one Git process (two when the root is not cached).
 func ReadStatus(ctx context.Context, dir string) (Status, error) {
-	root, err := Run(ctx, dir, "rev-parse", "--show-toplevel")
+	root, err := toplevel(ctx, dir)
 	if err != nil {
 		return Status{}, err
 	}
-	s := Status{Root: strings.TrimSpace(root)}
+	s := Status{Root: root}
 	raw, err := Run(ctx, s.Root, "--no-optional-locks", "status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--untracked-files=all")
 	if err != nil {
+		forgetToplevel(dir)
 		return s, err
 	}
 	upstream := ""

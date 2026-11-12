@@ -24,6 +24,15 @@ type Document struct {
 	diskState      DiskState
 	saveGeneration uint64
 	Exists         bool
+	dirty          dirtyCache
+}
+
+// Tabs ask every frame; one comparison per buffer version and save is enough.
+type dirtyCache struct {
+	buffer         *text.Buffer
+	version        int
+	saveGeneration uint64
+	dirty          bool
 }
 
 func New() *Document { return &Document{Buffer: text.New("")} }
@@ -75,7 +84,14 @@ func Open(path string) (*Document, error) {
 	d.saved = s
 	return d, nil
 }
-func (d *Document) Dirty() bool { return d.Buffer.String() != d.saved }
+func (d *Document) Dirty() bool {
+	c := d.dirty
+	if c.buffer != d.Buffer || c.version != d.Buffer.Version || c.saveGeneration != d.saveGeneration {
+		c = dirtyCache{d.Buffer, d.Buffer.Version, d.saveGeneration, !d.Buffer.Equal(d.saved)}
+		d.dirty = c
+	}
+	return c.dirty
+}
 func (d *Document) Name() string {
 	if d.Path == "" {
 		return "Untitled"
@@ -173,7 +189,7 @@ func (v *View) Head() int {
 	return v.Selections[len(v.Selections)-1].Head
 }
 func (v *View) Set(p int, selecting bool) {
-	p = text.Snap(v.Doc.Buffer.String(), p)
+	p = v.Doc.Buffer.Snap(p)
 	if !selecting {
 		v.Selections = []text.Selection{{Anchor: p, Head: p}}
 	} else {
@@ -212,7 +228,7 @@ func (v *View) ReplaceRanges(ranges []text.Selection, s string) bool {
 	return false
 }
 func (v *View) Delete(back, word bool) bool {
-	s := v.Doc.Buffer.String()
+	b := v.Doc.Buffer
 	ranges := append([]text.Selection(nil), v.Selections...)
 	for i, sel := range ranges {
 		if !sel.Empty() {
@@ -225,18 +241,18 @@ func (v *View) Delete(back, word bool) bool {
 			if back {
 				dir = -1
 			}
-			q = text.WordMove(s, p, dir)
+			q = b.WordMove(p, dir)
 		} else if back {
-			q = text.Prev(s, p)
-			if q+1 == p && p < len(s) {
+			q = b.Prev(p)
+			if q+1 == p && p < b.Len() {
 				pairs := map[byte]byte{'(': ')', '[': ']', '{': '}', 34: 34, 39: 39}
-				if close, ok := pairs[s[q]]; ok && s[p] == close {
+				if close, ok := pairs[b.ByteAt(q)]; ok && b.ByteAt(p) == close {
 					ranges[i] = text.Selection{Anchor: q, Head: p + 1}
 					continue
 				}
 			}
 		} else {
-			q = text.Next(s, p)
+			q = b.Next(p)
 		}
 		ranges[i] = text.Selection{Anchor: p, Head: q}
 	}
@@ -244,7 +260,6 @@ func (v *View) Delete(back, word bool) bool {
 }
 func (v *View) Move(dx, dy int, selecting, word bool, tab int) {
 	b := v.Doc.Buffer
-	s := b.String()
 	for i, sel := range v.Selections {
 		p := sel.Head
 		if !selecting && !sel.Empty() && dy == 0 && !word {
@@ -266,11 +281,11 @@ func (v *View) Move(dx, dy int, selecting, word bool, tab int) {
 				v.Preferred = goal
 			}
 		} else if word {
-			p = text.WordMove(s, p, dx)
+			p = b.WordMove(p, dx)
 		} else if dx < 0 {
-			p = text.Prev(s, p)
+			p = b.Prev(p)
 		} else {
-			p = text.Next(s, p)
+			p = b.Next(p)
 		}
 		if selecting {
 			v.Selections[i].Head = p
@@ -326,27 +341,27 @@ func (v *View) SelectNext() bool {
 }
 func (v *View) SelectedText() string {
 	var parts []string
-	s := v.Doc.Buffer.String()
+	b := v.Doc.Buffer
 	for _, sel := range v.Selections {
 		a, z := sel.Range()
 		if a == z {
-			row, _ := v.Doc.Buffer.Position(a)
-			a = v.Doc.Buffer.LineStart(row)
-			z = v.Doc.Buffer.LineEnd(row)
-			if z < len(s) {
+			row, _ := b.Position(a)
+			a = b.LineStart(row)
+			z = b.LineEnd(row)
+			if z < b.Len() {
 				z++
 			}
 		}
-		parts = append(parts, s[a:z])
+		parts = append(parts, b.Slice(a, z))
 	}
 	return strings.Join(parts, "\n")
 }
 
-// Remap updates a second view sharing the document after an edit.
+// Clamp snaps a view's selections to grapheme boundaries after an edit.
 func (v *View) Clamp() {
-	source := v.Doc.Buffer.String()
+	b := v.Doc.Buffer
 	for i, s := range v.Selections {
-		v.Selections[i] = text.Selection{Anchor: text.Snap(source, s.Anchor), Head: text.Snap(source, s.Head)}
+		v.Selections[i] = text.Selection{Anchor: b.Snap(s.Anchor), Head: b.Snap(s.Head)}
 	}
 	v.Top = max(0, min(v.Top, v.Doc.Buffer.LineCount()-1))
 }

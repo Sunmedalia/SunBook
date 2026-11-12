@@ -134,15 +134,15 @@ func (a *App) flushHighlights() {
 }
 func (a *App) runHighlight(d *editor.Document) {
 	version := d.Buffer.Version
-	s := d.Buffer.String()
 	path := d.Path
 	bg := a.base
 	syntax, themeSeq := a.themeSyntax, a.themeSeq
-	if len(s) > 2*1024*1024 {
+	if d.Buffer.Len() > 2*1024*1024 {
 		delete(a.highlight, d)
 		delete(a.highlightRunning, d)
 		return
 	}
+	s := d.Buffer.String()
 	go func() {
 		spans := syntaxSpans(path, s, bg, syntax)
 		a.post(func() {
@@ -311,8 +311,7 @@ func (a *App) requestCompletion(manual bool) {
 		if head == 0 {
 			return
 		}
-		s := d.Buffer.String()
-		prev := s[head-1]
+		prev := d.Buffer.ByteAt(head - 1)
 		if prev != '.' && !(prev >= 'a' && prev <= 'z' || prev >= 'A' && prev <= 'Z' || prev == '_') {
 			return
 		}
@@ -363,10 +362,10 @@ func (a *App) acceptCompletion() {
 		s = it.Label
 	}
 	lo, hi := c.Head, c.Head
-	source := c.Doc.Buffer.String()
+	b := c.Doc.Buffer
 	for lo > 0 {
-		p := text.Prev(source, lo)
-		r, _ := utf8.DecodeRuneInString(source[p:])
+		p := b.Prev(lo)
+		r, _ := utf8.DecodeRuneInString(b.Slice(p, lo))
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
 			break
 		}
